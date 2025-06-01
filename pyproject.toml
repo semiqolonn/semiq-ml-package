@@ -1,0 +1,25 @@
+[project]
+name = "ml-helper"
+version = "0.1.0"
+description = "A collection of reusable ML pipeline helper."
+authors = [
+    { name = "semiqolonn", email = "willianz@pm.me" },
+]
+dependencies = [
+    "lightgbm==4.6.0",
+    "xgboost==3.0.2",
+    "catboost==1.2.8",
+    "numpy==2.2.6",
+    "scikit-learn==1.6.1",
+    "pandas==2.2.3",
+    "matplotlib==3.10.3",
+    "seaborn==0.13.2",
+]
+requires-python = ">=3.8"
+readme = "README.md"
+license = { file = "LICENSE" }
+keywords = ["machine-learning", "data-science", "pipeline", "utils"]
+
+[build-system]
+requires = ["setuptools>=80.8.0"] # Or 'wheel', 'flit', etc.
+build-backend = "setuptools.build_meta"
