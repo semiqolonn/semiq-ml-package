@@ -3,6 +3,13 @@ import numpy as np
 import time
 import logging
 
+
+from sklearn.preprocessing import OneHotEncoder
+from sklearn.compose import ColumnTransformer
+from sklearn.pipeline import Pipeline
+from sklearn.preprocessing import StandardScaler
+
+
 from sklearn.model_selection import train_test_split
 from sklearn.linear_model import LogisticRegression, LinearRegression
 from sklearn.svm import SVC, SVR
@@ -89,6 +96,40 @@ class BaselineModel:
                 self.maximize_metric = True
 
 
+    def _preprocess_features(self, X):
+        """
+        Preprocesses the features:
+        - Encodes categorical variables (One-Hot)
+        - Scales numerical features (optional)
+        
+        Args:
+            X (pd.DataFrame): Raw input features.
+
+        Returns:
+            np.array: Processed features suitable for ML models.
+        """
+        if not isinstance(X, pd.DataFrame):
+            return X  # Assume already preprocessed
+
+        categorical_cols = X.select_dtypes(include=['object', 'category']).columns.tolist()
+        numeric_cols = X.select_dtypes(include=[np.number]).columns.tolist()
+
+        transformers = []
+
+        if categorical_cols:
+            transformers.append(
+                ('cat', OneHotEncoder(handle_unknown='ignore', sparse_output=False), categorical_cols)
+            )
+
+        if numeric_cols:
+            transformers.append(
+                ('num', StandardScaler(), numeric_cols)
+            )
+
+        self._preprocessor = ColumnTransformer(transformers)
+        return self._preprocessor.fit_transform(X)
+
+
     def _initialize_models(self):
         """
         Initializes a dictionary of model instances with basic defaults.
@@ -160,6 +201,8 @@ class BaselineModel:
         Returns:
             object: The best trained model instance based on the chosen metric.
         """
+        X = self._preprocess_features(X)  # Preprocess features
+        
         if self.task_type == 'classification':
             X_train, X_val, y_train, y_val = train_test_split(X, y, test_size=validation_size, random_state=self.random_state, stratify=y)
         else:
@@ -272,7 +315,10 @@ class BaselineModel:
 
             try:
                 if self.task_type == 'classification':
+                    if hasattr(self, '_preprocessor'):
+                        X = self._preprocessor.transform(X)
                     preds = model.predict(X)
+
                     metrics = {'accuracy': accuracy_score(y, preds)}
 
                     # Add other classification metrics if applicable
@@ -292,7 +338,10 @@ class BaselineModel:
                          metrics['precision_weighted'] = precision_score(y, preds, average='weighted', zero_division=0)
                          metrics['recall_weighted'] = recall_score(y, preds, average='weighted', zero_division=0)
                 else: # Regression
+                    if hasattr(self, '_preprocessor'):
+                        X = self._preprocessor.transform(X)
                     preds = model.predict(X)
+
                     metrics = {
                         'mse': mean_squared_error(y, preds),
                         'mae': mean_absolute_error(y, preds),
