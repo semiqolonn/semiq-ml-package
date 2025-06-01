@@ -1,7 +1,0 @@
-README.md
-pyproject.toml
-ml_helper.egg-info/PKG-INFO
-ml_helper.egg-info/SOURCES.txt
-ml_helper.egg-info/dependency_links.txt
-ml_helper.egg-info/requires.txt
-ml_helper.egg-info/top_level.txt
