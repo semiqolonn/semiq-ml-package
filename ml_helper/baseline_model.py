@@ -1,5 +1,3 @@
-# my_ml_lib/baseline_model.py (UPDATED)
-
 import pandas as pd
 import numpy as np
 import time
@@ -189,7 +187,7 @@ class BaselineModel:
             try:
                 current_fit_params = fit_params.copy()
 
-                # Special handling for boosting models' eval_set
+                # Special handling for boosting models' eval_set and verbosity
                 if isinstance(model, (LGBMClassifier, LGBMRegressor, XGBClassifier, XGBRegressor, CatBoostClassifier, CatBoostRegressor)):
                     if 'eval_set' not in current_fit_params:
                         current_fit_params['eval_set'] = [(X_val, y_val)]
@@ -205,6 +203,10 @@ class BaselineModel:
                     # XGBoost specific: silent mode via verbosity
                     if isinstance(model, (XGBClassifier, XGBRegressor)) and 'verbose' not in current_fit_params:
                         current_fit_params['verbose'] = False # Suppress boosting rounds output
+                    
+                    # LightGBM specific: silent mode via verbosity
+                    if isinstance(model, (LGBMClassifier, LGBMRegressor)) and 'verbose' not in current_fit_params:
+                        current_fit_params['verbose'] = -1 # Suppress all output for LightGBM
 
                 model.fit(X_train, y_train, **current_fit_params)
                 
