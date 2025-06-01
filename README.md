@@ -26,6 +26,7 @@ pip install -e .
 
 - **Baseline Models**: Quickly train baseline models with sensible defaults
 - **Preprocessing**: Built-in preprocessing steps for categorical and numerical features
+- **Feature Importance**: Easy extraction of feature importance from trained models
 - **Integration**: Seamless integration with scikit-learn, LightGBM, XGBoost, and CatBoost
 
 ## Usage
