@@ -42,19 +42,11 @@ data = pd.read_csv('your_data.csv')
 X = data.drop('target', axis=1)
 y = data['target']
 
-# Split data
-X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
+model = BaselineModel()
+model.fit(X, y)
 
-# Train a baseline model
-model = BaselineModel(algorithm='lightgbm')
-model.fit(X_train, y_train)
-
-# Evaluate model
-score = model.score(X_test, y_test)
-print(f"Model accuracy: {score}")
-
-# Make predictions
-predictions = model.predict(X_test)
+model.get_results() # to get the results of the baseline model
+lgbm = model.get_model('LGBM')
 ```
 
 ## Requirements

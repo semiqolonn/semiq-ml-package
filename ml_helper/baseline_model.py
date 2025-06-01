@@ -112,7 +112,7 @@ class BaselineModel:
                 'KNN': KNeighborsClassifier(),
                 'Decision Tree': DecisionTreeClassifier(random_state=self.random_state),
                 'Random Forest': RandomForestClassifier(random_state=self.random_state), # n_estimators handled by tuning
-                'LGBM': LGBMClassifier(random_state=self.random_state), # n_estimators, lr handled by tuning
+                'LGBM': LGBMClassifier(random_state=self.random_state, verbosity=-1), # n_estimators, lr handled by tuning
                 'XGBoost': XGBClassifier(random_state=self.random_state, use_label_encoder=False, eval_metric='logloss'),
                 'CatBoost': CatBoostClassifier(random_state=self.random_state, silent=True) # iterations, lr handled by tuning
             }
