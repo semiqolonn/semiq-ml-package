@@ -25,7 +25,7 @@ pip install -e .
 ## Features
 
 - **Baseline Models**: Quickly train baseline models with sensible defaults
-- **Hyperparameter Tuning**: Optimize model performance using random search
+- **Preprocessing**: Built-in preprocessing steps for categorical and numerical features
 - **Integration**: Seamless integration with scikit-learn, LightGBM, XGBoost, and CatBoost
 
 ## Usage
