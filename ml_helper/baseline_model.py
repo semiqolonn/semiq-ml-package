@@ -140,7 +140,7 @@ class BaselineModel:
             return {
                 'Logistic Regression': LogisticRegression(random_state=self.random_state, solver='liblinear', max_iter=1000),
                 # SVC probability is expensive; enable only if ROC AUC is desired metric
-                'SVC': SVC(random_state=self.random_state, probability=(self.metric == 'roc_auc')),
+                'SVC': SVC(random_state=self.random_state, probability=(self.metric in ('roc_auc', 'auc'))),
                 'KNN': KNeighborsClassifier(),
                 'Decision Tree': DecisionTreeClassifier(random_state=self.random_state),
                 'Random Forest': RandomForestClassifier(random_state=self.random_state), # n_estimators handled by tuning
