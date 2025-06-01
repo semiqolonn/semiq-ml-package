@@ -311,6 +311,7 @@ class BaselineModel:
             dict: A dictionary where keys are model names and values are
                   dictionaries of detailed metrics (e.g., {'accuracy': 0.85, 'f1': 0.82}).
         """
+        X = self._preprocess_features(X)
         predictions_metrics = {}
         if not self.results:
             logger.warning("No models have been trained yet. Run .fit() first.")
