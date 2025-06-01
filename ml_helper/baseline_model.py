@@ -2,6 +2,7 @@ import pandas as pd
 import numpy as np
 import time
 import logging
+import matplotlib.pyplot as plt
 
 
 from sklearn.preprocessing import OneHotEncoder
@@ -589,3 +590,110 @@ class BaselineModel:
             results_df = results_df.sort_values(by="score", ascending=True)
 
         return results_df.reset_index(drop=True)
+
+
+    def roc_curves(self, X, y):
+        """
+        Plots ROC curves for all classification models that support it.
+        Args:
+            X (pd.DataFrame or np.array): Features for evaluation.
+            y (pd.Series or np.array): Target variable for evaluation.
+        """
+        if self.task_type != "classification":
+            raise ValueError("ROC curves can only be plotted for classification tasks.")
+        if not self.results:
+            logger.warning("No models have been trained yet. Run .fit() first.")
+            return
+        plt.figure(figsize=(10, 8))
+        for name, model_info in self.results.items():
+            model = model_info["model"]
+            if model is None or not hasattr(model, "predict_proba"):
+                logger.warning(f"Skipping ROC curve for {name} as it does not support predict_proba.")
+                continue
+            
+            try:
+                y_pred_proba = model.predict_proba(X)[:, 1]
+                fpr, tpr, _ = roc_curve(y, y_pred_proba)
+                plt.plot(fpr, tpr, label=f"{name} (AUC = {roc_auc_score(y, y_pred_proba):.2f})")
+            except Exception as e:
+                logger.error(f"Error plotting ROC curve for {name}: {e}")
+        plt.plot([0, 1], [0, 1], 'k--', label='Random Guessing')
+        plt.xlabel('False Positive Rate')
+        plt.ylabel('True Positive Rate')
+        plt.title('ROC Curves for Classification Models')
+        plt.legend()
+        plt.grid()
+        plt.show()
+
+    def precission_recall_curves(self, X, y):
+        """
+        Plots Precision-Recall curves for all classification models that support it.
+        Args:
+            X (pd.DataFrame or np.array): Features for evaluation.
+            y (pd.Series or np.array): Target variable for evaluation.
+        """
+        if self.task_type != "classification":
+            raise ValueError("Precision-Recall curves can only be plotted for classification tasks.")
+        if not self.results:
+            logger.warning("No models have been trained yet. Run .fit() first.")
+            return
+        plt.figure(figsize=(10, 8))
+        for name, model_info in self.results.items():
+            model = model_info["model"]
+            if model is None or not hasattr(model, "predict_proba"):
+                logger.warning(f"Skipping Precision-Recall curve for {name} as it does not support predict_proba.")
+                continue
+            
+            try:
+                y_pred_proba = model.predict_proba(X)[:, 1]
+                precision, recall, _ = precision_recall_curve(y, y_pred_proba)
+                plt.plot(recall, precision, label=f"{name} (AUC = {average_precision_score(y, y_pred_proba):.2f})")
+            except Exception as e:
+                logger.error(f"Error plotting Precision-Recall curve for {name}: {e}")
+        plt.xlabel('Recall')
+        plt.ylabel('Precision')
+        plt.title('Precision-Recall Curves for Classification Models')
+        plt.legend()
+        plt.grid()
+        plt.show()
+    
+    def plot_feature_importances(self, model_name, top_n=10):
+        """
+        Plots feature importances for a given model if it supports feature importances.
+
+        Args:
+            model_name (str): The name of the model to plot feature importances for.
+            top_n (int): Number of top features to display. Default is 10.
+        """
+        model = self.get_model(model_name)
+        if model is None:
+            logger.error(f"Model '{model_name}' not found or failed to train.")
+            return
+
+        if hasattr(model, "feature_importances_"):
+            importances = model.feature_importances_
+        elif hasattr(model, "coef_"):
+            importances = np.abs(model.coef_[0])
+        else:
+            logger.error(f"Model '{model_name}' does not support feature importances.")
+            return
+        if isinstance(importances, pd.Series):
+            importances = importances.values
+        if len(importances) == 0:
+            logger.error(f"Model '{model_name}' has no feature importances to plot.")
+            return
+        if hasattr(self, '_preprocessor') and hasattr(self._preprocessor, 'get_feature_names_out'):
+            feature_names = self._preprocessor.get_feature_names_out()
+        else:
+            feature_names = [f"Feature {i}" for i in range(len(importances))]
+        # Create a DataFrame for importances
+        importances_df = pd.DataFrame({
+            'feature': feature_names,
+            'importance': importances
+        }).sort_values(by='importance', ascending=False).head(top_n)
+        plt.figure(figsize=(10, 6))
+        plt.barh(importances_df['feature'], importances_df['importance'], color='skyblue')
+        plt.xlabel('Importance')
+        plt.title(f'Feature Importances for {model_name}')
+        plt.gca().invert_yaxis()
+        plt.show()
