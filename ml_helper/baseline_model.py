@@ -146,41 +146,60 @@ class BaselineModel:
     def _preprocess_features(self, X, fit=True):
         """
         Preprocesses the features:
+        - Handles missing values
         - Encodes categorical variables (One-Hot)
         - Scales numerical features (optional)
-
+    
         Args:
             X (pd.DataFrame): Raw input features.
             fit (bool): Whether to fit the preprocessor or just transform. Default is True.
-
+    
         Returns:
             np.array: Processed features suitable for ML models.
         """
         if not isinstance(X, pd.DataFrame):
             return X  # Assume already preprocessed
-
+    
+        # Check for missing values and log them
+        missing_counts = X.isnull().sum()
+        if missing_counts.sum() > 0:
+            missing_cols = missing_counts[missing_counts > 0]
+            logger.warning(f"Found missing values in {len(missing_cols)} columns: {missing_cols.to_dict()}")
+    
         categorical_cols = X.select_dtypes(
             include=["object", "category"]
         ).columns.tolist()
         numeric_cols = X.select_dtypes(include=[np.number]).columns.tolist()
-
+    
         transformers = []
-
-        if categorical_cols:
-            transformers.append(
-                (
-                    "cat",
-                    OneHotEncoder(handle_unknown="ignore", sparse_output=False),
-                    categorical_cols,
-                )
-            )
-
+    
+        # Simple imputation for numeric features
         if numeric_cols:
-            transformers.append(("num", StandardScaler(), numeric_cols))
-
+            from sklearn.impute import SimpleImputer
+            transformers.append((
+                "num", 
+                Pipeline([
+                    ('imputer', SimpleImputer(strategy='median')),
+                    ('scaler', StandardScaler())
+                ]), 
+                numeric_cols
+            ))
+    
+        # Simple imputation for categorical features
+        if categorical_cols:
+            from sklearn.impute import SimpleImputer
+            transformers.append((
+                "cat",
+                Pipeline([
+                    ('imputer', SimpleImputer(strategy='most_frequent')),
+                    ('encoder', OneHotEncoder(handle_unknown="ignore", sparse_output=False))
+                ]),
+                categorical_cols
+            ))
+    
         # Create preprocessor if not exists or fit is requested
         if not hasattr(self, '_preprocessor') or fit:
-            self._preprocessor = ColumnTransformer(transformers)
+            self._preprocessor = ColumnTransformer(transformers, remainder='drop')
             return self._preprocessor.fit_transform(X)
         else:
             # Use the existing preprocessor to transform new data
