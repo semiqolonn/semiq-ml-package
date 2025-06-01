@@ -163,11 +163,19 @@ class BaselineModel:
     def _evaluate_model_score(self, model, X_val, y_val):
         """Calculates the score for a given model and metric."""
         if self.task_type == 'classification':
-            if self.metric == 'roc_auc' or self.metric == 'auc':
-                # Check if model supports predict_proba, otherwise fall back to accuracy/f1
-                if hasattr(model, 'predict_proba') and (hasattr(model, 'probability') and model.probability): # Ensure SVC is enabled
-                    # Handle multi-class ROC AUC if needed (sklearn handles binary well)
-                    if y_val.nunique() > 2:
+            if self.metric in ('roc_auc', 'auc'):
+                has_proba = (
+                    hasattr(model, 'predict_proba') and callable(getattr(model, 'predict_proba'))
+                ) or (
+                    hasattr(model, 'probability') and getattr(model, 'probability') is True
+                )
+
+                if has_proba:
+                    # Use np.unique to support Series or ndarray
+                    import numpy as np
+                    is_multiclass = len(np.unique(y_val)) > 2
+
+                    if is_multiclass:
                         logger.warning("ROC AUC for multi-class is complex. Using f1_weighted instead.")
                         y_pred = model.predict(X_val)
                         return self._metric_functions['f1_weighted'](y_val, y_pred)
@@ -177,13 +185,14 @@ class BaselineModel:
                 else:
                     logger.warning(f"Model {model.__class__.__name__} does not support predict_proba or `probability=True` not set. Falling back to accuracy for ROC AUC metric.")
                     y_pred = model.predict(X_val)
-                    return accuracy_score(y_val, y_pred) # Fallback to accuracy if ROC AUC not possible
+                    return accuracy_score(y_val, y_pred)
             else:
                 y_pred = model.predict(X_val)
                 return self._metric_functions[self.metric](y_val, y_pred)
-        else: # Regression
+        else:  # Regression
             y_pred = model.predict(X_val)
             return self._metric_functions[self.metric](y_val, y_pred)
+
 
 
     def fit(self, X, y, validation_size=0.2, **fit_params):
