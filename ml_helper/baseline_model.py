@@ -281,7 +281,7 @@ class BaselineModel:
     def fit(self, X, y, validation_size=0.2, **fit_params):
         """
         Trains all initialized models and evaluates them on a validation set.
-
+    
         Args:
             X (pd.DataFrame or np.array): Features for training and validation.
             y (pd.Series or np.array): Target variable for training and validation.
@@ -289,12 +289,20 @@ class BaselineModel:
             **fit_params: Additional keyword arguments to pass to the model's .fit() method.
                           This is especially useful for boosting models (e.g., `early_stopping_rounds`).
                           `eval_set` will be automatically passed for boosting models.
-
+    
         Returns:
             object: The best trained model instance based on the chosen metric.
         """
+        # Store original DataFrame for CatBoost before preprocessing
+        original_X = X.copy() if isinstance(X, pd.DataFrame) else None
+        categorical_cols = None
+        
+        if original_X is not None:
+            categorical_cols = original_X.select_dtypes(include=["object", "category"]).columns.tolist()
+        
+        # Preprocess features for non-CatBoost models
         X = self._preprocess_features(X)  # Preprocess features
-
+    
         if self.task_type == "classification":
             X_train, X_val, y_train, y_val = train_test_split(
                 X,
@@ -303,79 +311,107 @@ class BaselineModel:
                 random_state=self.random_state,
                 stratify=y,
             )
+            # Also split the original data for CatBoost
+            if original_X is not None:
+                original_X_train, original_X_val, _, _ = train_test_split(
+                    original_X,
+                    y,
+                    test_size=validation_size,
+                    random_state=self.random_state,
+                    stratify=y,
+                )
         else:
             X_train, X_val, y_train, y_val = train_test_split(
                 X, y, test_size=validation_size, random_state=self.random_state
             )
-
+            # Also split the original data for CatBoost
+            if original_X is not None:
+                original_X_train, original_X_val, _, _ = train_test_split(
+                    original_X,
+                    y,
+                    test_size=validation_size,
+                    random_state=self.random_state,
+                )
+    
         self.results = {}
         self.best_model_ = None
         # Reset best score for fresh run, considering maximize_metric
         self.best_score_ = -np.inf if self.maximize_metric else np.inf
-
+    
         logger.info(
             f"Starting BaselineModel training for {self.task_type} with metric: {self.metric}"
         )
         logger.info(f"Validation set size: {validation_size * 100:.0f}%")
-
+    
         for name, model in self.models_to_run.items():
             start_time = time.time()
             try:
                 current_fit_params = fit_params.copy()
-
-                # Special handling for boosting models' eval_set and verbosity
-                if isinstance(
+    
+                # Special handling for different model types
+                if isinstance(model, (CatBoostClassifier, CatBoostRegressor)) and original_X is not None:
+                    # Use original data for CatBoost with categorical features properly handled
+                    current_fit_train = original_X_train
+                    current_fit_val = original_X_val
+                    
+                    if categorical_cols:
+                        current_fit_params["cat_features"] = categorical_cols
+                        logger.info(f"CatBoost: Using categorical features: {categorical_cols}")
+                    
+                    if "eval_set" not in current_fit_params:
+                        current_fit_params["eval_set"] = [(current_fit_val, y_val)]
+                
+                # For other boosting models
+                elif isinstance(
                     model,
                     (
                         LGBMClassifier,
                         LGBMRegressor,
                         XGBClassifier,
                         XGBRegressor,
-                        CatBoostClassifier,
-                        CatBoostRegressor,
                     ),
                 ):
+                    current_fit_train = X_train
+                    current_fit_val = X_val
+                    
                     if "eval_set" not in current_fit_params:
                         current_fit_params["eval_set"] = [(X_val, y_val)]
-
-                    # For CatBoost, if categorical features are in X (DataFrame), pass them
-                    if isinstance(
-                        model, (CatBoostClassifier, CatBoostRegressor)
-                    ) and isinstance(X_train, pd.DataFrame):
-                        # Attempt to auto-detect categorical features if not explicitly provided
-                        categorical_cols = X_train.select_dtypes(
-                            include="object"
-                        ).columns.tolist()
-                        if categorical_cols:
-                            current_fit_params["cat_features"] = categorical_cols
-                            logger.info(
-                                f"CatBoost: Auto-detected categorical features: {categorical_cols}"
-                            )
-
+    
                     # XGBoost specific: silent mode via verbosity
                     if (
                         isinstance(model, (XGBClassifier, XGBRegressor))
                         and "verbose" not in current_fit_params
                     ):
-                        current_fit_params["verbose"] = (
-                            False  # Suppress boosting rounds output
-                        )
-
-                model.fit(X_train, y_train, **current_fit_params)
-
-                score = self._evaluate_model_score(model, X_val, y_val)
+                        current_fit_params["verbose"] = False  # Suppress boosting rounds output
+                
+                else:
+                    # Regular sklearn models
+                    current_fit_train = X_train
+                    current_fit_val = X_val
+    
+                # Train the model
+                model.fit(current_fit_train, y_train, **current_fit_params)
+    
+                # Evaluate on validation data
+                if isinstance(model, (CatBoostClassifier, CatBoostRegressor)) and original_X is not None:
+                    score = self._evaluate_model_score(model, current_fit_val, y_val)
+                else:
+                    score = self._evaluate_model_score(model, X_val, y_val)
+                    
                 elapsed_time = time.time() - start_time
-
+    
                 logger.info(
                     f"  {name} {self.metric}: {score:.4f} (Training Time: {elapsed_time:.2f}s)"
                 )
-
+    
                 self.results[name] = {
                     "model": model,
                     "score": score,
                     "time": elapsed_time,
+                    "is_catboost": isinstance(model, (CatBoostClassifier, CatBoostRegressor)),
+                    "categorical_cols": categorical_cols if isinstance(model, (CatBoostClassifier, CatBoostRegressor)) else None
                 }
-
+    
                 # Update best model based on metric direction
                 if (self.maximize_metric and score > self.best_score_) or (
                     not self.maximize_metric and score < self.best_score_
@@ -385,7 +421,7 @@ class BaselineModel:
                     logger.info(
                         f"  --> NEW BEST model: {name} with {self.metric}: {score:.4f}"
                     )
-
+    
             except Exception as e:
                 logger.error(f"Error training {name}: {e}")
                 self.results[name] = {
@@ -394,13 +430,13 @@ class BaselineModel:
                     "time": None,
                     "error": str(e),
                 }
-
+    
         if not self.best_model_:
             logger.error(
                 "No models were successfully trained or evaluated to determine a best model."
             )
             return None
-
+    
         logger.info(
             f"BaselineModel run complete. Best model: {self.best_model_.__class__.__name__} with {self.best_score_:.4f}"
         )
@@ -427,16 +463,19 @@ class BaselineModel:
         """
         Evaluates all trained models on a given dataset (X, y) and returns
         a dictionary of detailed metric scores for each model.
-
+    
         Args:
             X (pd.DataFrame or np.array): Features for evaluation.
             y (pd.Series or np.array): Target variable for evaluation.
-
+    
         Returns:
             dict: A dictionary where keys are model names and values are
                 dictionaries of detailed metrics (e.g., {'accuracy': 0.85, 'f1': 0.82}).
         """
-        # Transform input features without refitting the preprocessor
+        # Keep original data for CatBoost
+        original_X = X.copy() if isinstance(X, pd.DataFrame) else None
+        
+        # Transform input features without refitting the preprocessor for non-CatBoost models
         if isinstance(X, pd.DataFrame):
             processed_X = self._preprocess_features(X, fit=False)
         else:
@@ -446,23 +485,27 @@ class BaselineModel:
         if not self.results:
             logger.warning("No models have been trained yet. Run .fit() first.")
             return predictions_metrics
-
+    
         for name, model_info in self.results.items():
             model = model_info["model"]
             if model is None:
                 logger.warning(f"Skipping evaluation for {name} as it failed to train.")
                 continue
-
+    
             try:
+                # Use the appropriate input data based on model type
+                is_catboost = model_info.get("is_catboost", False)
+                eval_X = original_X if is_catboost and original_X is not None else processed_X
+                
                 if self.task_type == "classification":
-                    preds = model.predict(processed_X)
+                    preds = model.predict(eval_X)
                     metrics = {"accuracy": accuracy_score(y, preds)}
-
+    
                     # Add other classification metrics if applicable
                     if hasattr(model, "predict_proba") and (
                         not hasattr(model, "probability") or model.probability
                     ):  # Better SVC probability check
-                        y_pred_proba = model.predict_proba(processed_X)
+                        y_pred_proba = model.predict_proba(eval_X)
                         metrics["f1_weighted"] = f1_score(
                             y, preds, average="weighted", zero_division=0
                         )
@@ -480,11 +523,9 @@ class BaselineModel:
                         metrics["recall_weighted"] = recall_score(
                             y, preds, average="weighted", zero_division=0
                         )
-                        metrics["log_loss"] = (
-                            -np.mean(np.log(y_pred_proba + 1e-15))
-                            if len(np.unique(y)) == 2
-                            else None
-                        )  # Avoid log(0) issues
+                        # Don't include log_loss for multiclass
+                        if len(np.unique(y)) == 2:
+                            metrics["log_loss"] = -np.mean(np.log(y_pred_proba[:, 1] + 1e-15))
                     else:  # Fallback metrics if proba not available
                         metrics["f1_weighted"] = f1_score(
                             y, preds, average="weighted", zero_division=0
@@ -496,11 +537,11 @@ class BaselineModel:
                             y, preds, average="weighted", zero_division=0
                         )
                 else:  # Regression
-                    preds = model.predict(processed_X)
+                    preds = model.predict(eval_X)
                     metrics = {
                         "mse": mean_squared_error(y, preds),
                         "mae": mean_absolute_error(y, preds),
-                        "r2": r2_score(y, preds),\
+                        "r2": r2_score(y, preds),
                     }
                 predictions_metrics[name] = metrics
             except Exception as e:
