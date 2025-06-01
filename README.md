@@ -52,7 +52,7 @@ lgbm = model.get_model('LGBM')
 
 ## Requirements
 
-- Python >=3.8
+- Python >=3.12
 - numpy
 - pandas
 - scikit-learn
