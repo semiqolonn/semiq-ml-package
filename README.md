@@ -57,33 +57,6 @@ print(f"Model accuracy: {score}")
 predictions = model.predict(X_test)
 ```
 
-### Hyperparameter Tuning
-
-```python
-from ml_helper import RandomSearchOptimizer
-import numpy as np
-
-# Define parameter grid
-param_grid = {
-    'n_estimators': np.arange(50, 200, 25),
-    'max_depth': [3, 5, 7, 9],
-    'learning_rate': [0.01, 0.05, 0.1, 0.2]
-}
-
-# Initialize optimizer
-optimizer = RandomSearchOptimizer(
-    algorithm='xgboost',
-    param_grid=param_grid,
-    n_iter=20,
-    cv=5
-)
-
-# Run optimization
-best_model = optimizer.optimize(X_train, y_train)
-print(f"Best parameters: {optimizer.best_params_}")
-print(f"Best score: {optimizer.best_score_}")
-```
-
 ## Requirements
 
 - Python >=3.8
