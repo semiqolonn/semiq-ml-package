@@ -117,6 +117,7 @@ class BaselineModel:
                 "precision_weighted",
                 "recall_weighted",
                 "auc",
+                "log_loss",  # Added log_loss for classification
             ]:
                 raise ValueError(
                     f"Invalid metric '{self.metric}' for classification. Choose from 'accuracy', 'f1_weighted', 'roc_auc', 'precision_weighted', 'recall_weighted'."
@@ -479,6 +480,11 @@ class BaselineModel:
                         metrics["recall_weighted"] = recall_score(
                             y, preds, average="weighted", zero_division=0
                         )
+                        metrics["log_loss"] = (
+                            -np.mean(np.log(y_pred_proba + 1e-15))
+                            if len(np.unique(y)) == 2
+                            else None
+                        )  # Avoid log(0) issues
                     else:  # Fallback metrics if proba not available
                         metrics["f1_weighted"] = f1_score(
                             y, preds, average="weighted", zero_division=0
@@ -494,13 +500,20 @@ class BaselineModel:
                     metrics = {
                         "mse": mean_squared_error(y, preds),
                         "mae": mean_absolute_error(y, preds),
-                        "r2": r2_score(y, preds),
+                        "r2": r2_score(y, preds),\
                     }
                 predictions_metrics[name] = metrics
             except Exception as e:
                 logger.error(f"Error evaluating {name}: {e}")
                 predictions_metrics[name] = {"error": str(e)}
-
+        
+        predictions_metrics = pd.DataFrame(predictions_metrics).T
+        predictions_metrics.index.name = "model"
+        predictions_metrics.reset_index(inplace=True)
+        predictions_metrics = predictions_metrics.rename(
+            columns={"index": "model"}
+        )
+        logger.info("Evaluation complete. Metrics for each model:")
         return predictions_metrics
 
     def get_results(self):
