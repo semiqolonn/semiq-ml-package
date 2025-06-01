@@ -138,7 +138,7 @@ class BaselineModel:
             else:  # r2 is maximized
                 self.maximize_metric = True
 
-    def _preprocess_features(self, X):
+    def _preprocess_features(self, X, fit=True):
         """
         Preprocesses the features:
         - Encodes categorical variables (One-Hot)
@@ -146,6 +146,7 @@ class BaselineModel:
 
         Args:
             X (pd.DataFrame): Raw input features.
+            fit (bool): Whether to fit the preprocessor or just transform. Default is True.
 
         Returns:
             np.array: Processed features suitable for ML models.
@@ -172,8 +173,14 @@ class BaselineModel:
         if numeric_cols:
             transformers.append(("num", StandardScaler(), numeric_cols))
 
-        self._preprocessor = ColumnTransformer(transformers)
-        return self._preprocessor.fit_transform(X)
+        # Create preprocessor if not exists or fit is requested
+        if not hasattr(self, '_preprocessor') or fit:
+            self._preprocessor = ColumnTransformer(transformers)
+            return self._preprocessor.fit_transform(X)
+        else:
+            # Use the existing preprocessor to transform new data
+            return self._preprocessor.transform(X)
+
 
     def _initialize_models(self):
         """
@@ -428,8 +435,12 @@ class BaselineModel:
             dict: A dictionary where keys are model names and values are
                 dictionaries of detailed metrics (e.g., {'accuracy': 0.85, 'f1': 0.82}).
         """
-        # Transform input features once
-        processed_X = self._preprocess_features(X)
+        # Transform input features without refitting the preprocessor
+        if isinstance(X, pd.DataFrame):
+            processed_X = self._preprocess_features(X, fit=False)
+        else:
+            processed_X = X  # Assume already preprocessed
+        
         predictions_metrics = {}
         if not self.results:
             logger.warning("No models have been trained yet. Run .fit() first.")
