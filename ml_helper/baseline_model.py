@@ -82,7 +82,7 @@ class BaselineModel:
 
         if self.task_type == 'classification':
             self.metric = metric if metric else 'accuracy'
-            if self.metric not in ['accuracy', 'f1_weighted', 'roc_auc', 'precision_weighted', 'recall_weighted']:
+            if self.metric not in ['accuracy', 'f1_weighted', 'roc_auc', 'precision_weighted', 'recall_weighted', 'auc']:
                 raise ValueError(f"Invalid metric '{self.metric}' for classification. Choose from 'accuracy', 'f1_weighted', 'roc_auc', 'precision_weighted', 'recall_weighted'.")
         else: # regression
             self.metric = metric if metric else 'neg_root_mean_squared_error'
