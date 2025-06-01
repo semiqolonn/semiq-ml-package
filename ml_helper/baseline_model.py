@@ -59,22 +59,13 @@ class BaselineModel:
             'accuracy': accuracy_score,
             'f1_weighted': lambda y_true, y_pred: f1_score(y_true, y_pred, average='weighted', zero_division=0),
             'roc_auc': roc_auc_score,
+            'auc': roc_auc_score,  # Alias for compatibility
             'precision_weighted': lambda y_true, y_pred: precision_score(y_true, y_pred, average='weighted', zero_division=0),
             'recall_weighted': lambda y_true, y_pred: recall_score(y_true, y_pred, average='weighted', zero_division=0),
             'neg_root_mean_squared_error': lambda y_true, y_pred: -np.sqrt(mean_squared_error(y_true, y_pred)),
             'r2': r2_score,
-            'neg_mean_absolute_error': lambda y_true, y_pred: -mean_absolute_error(y_true, y_pred)
-        }
-        # Mapping for sklearn's `scoring` parameter in GridSearchCV/RandomizedSearchCV
-        self._sklearn_scoring_map = {
-            'accuracy': 'accuracy',
-            'f1_weighted': 'f1_weighted',
-            'roc_auc': 'roc_auc', # For binary classification
-            'precision_weighted': 'precision_weighted',
-            'recall_weighted': 'recall_weighted',
-            'neg_root_mean_squared_error': 'neg_root_mean_squared_error',
-            'r2': 'r2',
-            'neg_mean_absolute_error': 'neg_mean_absolute_error'
+            'neg_mean_absolute_error': lambda y_true, y_pred: -mean_absolute_error(y_true, y_pred),
+            'log_loss': lambda y_true, y_pred: -np.mean(np.log(y_pred + 1e-15)) if len(np.unique(y_true)) == 2 else None
         }
 
 
@@ -131,7 +122,7 @@ class BaselineModel:
     def _evaluate_model_score(self, model, X_val, y_val):
         """Calculates the score for a given model and metric."""
         if self.task_type == 'classification':
-            if self.metric == 'roc_auc':
+            if self.metric == 'roc_auc' or self.metric == 'auc':
                 # Check if model supports predict_proba, otherwise fall back to accuracy/f1
                 if hasattr(model, 'predict_proba') and (hasattr(model, 'probability') and model.probability): # Ensure SVC is enabled
                     # Handle multi-class ROC AUC if needed (sklearn handles binary well)
