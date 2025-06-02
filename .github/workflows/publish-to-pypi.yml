@@ -6,41 +6,41 @@ on:
       - 'v*'  # Run when tag is pushed matching pattern v*, like v0.1.0
 
 jobs:
-  deploy:
+  deploy: # <-- This should be what's on line 9 (or similar, if line numbers vary slightly due to blank lines)
     runs-on: ubuntu-latest
     permissions: # Add this section
       id-token: write # Required to interact with PyPI's OIDC trusted publishing
     steps:
     - uses: actions/checkout@v3
-    
+
     - name: Set up Python
       uses: actions/setup-python@v4
       with:
         python-version: '3.12'
-        
+
     - name: Install dependencies
       run: |
         python -m pip install --upgrade pip
         pip install build twine
-        
+
     - name: Build and check package
       run: |
         python -m build
         twine check dist/*
-        
+
     - name: Publish to Test PyPI
-    uses: pypa/gh-action-pypi-publish@release/v1
-    with:
-        user: __token__ # If using API token
-        password: ${{ secrets.TEST_PYPI_API_TOKEN }} # If using API token
+      uses: pypa/gh-action-pypi-publish@release/v1
+      with:
+        # user: __token__ # If using API token (consider trusted publishing)
+        # password: ${{ secrets.TEST_PYPI_API_TOKEN }} # If using API token
         repository-url: https://test.pypi.org/legacy/
         skip-existing: true
-        attestations: false # <--- Add or change this to false
+        attestations: false # Workaround for previous attestations error
 
     - name: Publish to PyPI
-    if: startsWith(github.ref, 'refs/tags/')
-    uses: pypa/gh-action-pypi-publish@release/v1
-    with:
-        user: __token__ # If using API token
-        password: ${{ secrets.PYPI_API_TOKEN }} # If using API token
-        attestations: false # <--- Add or change this to false
+      if: startsWith(github.ref, 'refs/tags/')
+      uses: pypa/gh-action-pypi-publish@release/v1
+      with:
+        # user: __token__ # If using API token (consider trusted publishing)
+        # password: ${{ secrets.PYPI_API_TOKEN }} # If using API token
+        attestations: false # Workaround for previous attestations error
