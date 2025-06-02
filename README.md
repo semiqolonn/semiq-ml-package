@@ -4,7 +4,7 @@ A collection of reusable machine learning pipeline helpers designed to streamlin
 
 ## Description
 
-ML Helper is a Python package that provides helper functions and classes to simplify common machine learning tasks, including baseline model training and hyperparameter tuning. It supports popular ML frameworks like LightGBM, XGBoost, and CatBoost.
+semiq-ml is a Python package that provides helper functions and classes to simplify common machine learning tasks, including baseline model training and hyperparameter tuning. It supports popular ML frameworks like LightGBM, XGBoost, and CatBoost.
 
 ## Installation
 
@@ -34,7 +34,6 @@ pip install -e .
 
 - **Baseline Models**: Quickly train baseline models with sensible defaults
 - **Preprocessing**: Simple preprocessing steps for features (e.g., imputing, encoding, scaling)
-- **Feature Importance**: Easy extraction of feature importance from trained models
 - **Integration**: Seamless integration with scikit-learn, LightGBM, XGBoost, and CatBoost
 
 ## Usage
