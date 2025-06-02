@@ -1,5 +1,5 @@
 [project]
-name = "ml-helper"
+name = "semiq-ml"
 version = "0.1.0"
 description = "A collection of reusable ML pipeline helper."
 authors = [

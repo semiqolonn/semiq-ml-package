@@ -1,4 +1,4 @@
-# ML Helper
+# semiq-ml
 
 A collection of reusable machine learning pipeline helpers designed to streamline ML workflows.
 
@@ -11,13 +11,13 @@ ML Helper is a Python package that provides helper functions and classes to simp
 Install the package directly from GitHub:
 
 ```bash
-pip install git+https://github.com/yourusername/ml-helper.git
+pip install git+https://github.com/yourusername/semiq-ml.git
 ```
 
 Or install from source:
 
 ```bash
-git clone https://github.com/yourusername/ml-helper.git
+git clone https://github.com/yourusername/semiq-ml.git
 cd ml-helper
 pip install -e .
 ```

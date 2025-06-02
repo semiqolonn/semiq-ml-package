@@ -1,5 +1,5 @@
 """
-ML Helper Package
+Semiq-ML helper Package
 
 This package provides helper functions and classes to simplify common machine learning workflows,
 including baseline model training and hyperparameter tuning.
