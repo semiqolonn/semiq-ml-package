@@ -2,3 +2,5 @@
 */*/__pycache__
 catboost_info/
 /docs/
+/semiq_ml.egg-info/
+/dist/

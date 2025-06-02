@@ -8,6 +8,14 @@ ML Helper is a Python package that provides helper functions and classes to simp
 
 ## Installation
 
+### From PyPI
+You can install the package from PyPI using pip:
+
+```bash
+pip install semiq-ml
+```
+
+### From Source
 Install the package directly from GitHub:
 
 ```bash
@@ -49,6 +57,9 @@ model.fit(X, y)
 model.get_results() # to get the results of the baseline model
 lgbm = model.get_model('LGBM')
 ```
+
+## Documentation
+For detailed documentation, please refer to the [Wiki](https://github.com/yourusername/semiq-ml/wiki)
 
 ## Requirements
 
