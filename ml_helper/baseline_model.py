@@ -265,9 +265,9 @@ class BaselineModel:
         )
         
         original_X_train_catboost, original_X_val_catboost = (None, None)
-        if original_X_for_catboost is not None:
+        if self.original_X_for_catboost is not None:
             original_X_train_catboost, original_X_val_catboost, _, _ = train_test_split(
-                original_X_for_catboost, y, test_size=validation_size, random_state=self.random_state, stratify=stratify_opt
+                self.original_X_for_catboost, y, test_size=validation_size, random_state=self.random_state, stratify=stratify_opt
             )
 
         self.best_model_ = None
