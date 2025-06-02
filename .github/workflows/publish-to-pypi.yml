@@ -8,6 +8,8 @@ on:
 jobs:
   deploy:
     runs-on: ubuntu-latest
+    permissions: # Add this section
+      id-token: write # Required to interact with PyPI's OIDC trusted publishing
     steps:
     - uses: actions/checkout@v3
     
