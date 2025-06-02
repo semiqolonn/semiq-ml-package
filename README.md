@@ -59,7 +59,7 @@ lgbm = model.get_model('LGBM')
 ```
 
 ## Documentation
-For detailed documentation, please refer to the [Wiki](https://github.com/yourusername/semiq-ml/wiki)
+For detailed documentation, please refer to the [Wiki](https://github.com/semiqolonn/semiq-ml/wiki)
 
 ## Requirements
 
