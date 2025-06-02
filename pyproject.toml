@@ -1,25 +1,34 @@
+[build-system]
+requires = ["setuptools>=42", "wheel"]
+build-backend = "setuptools.build_meta"
+
 [project]
 name = "semiq-ml"
 version = "0.1.0"
-description = "A collection of reusable ML pipeline helper."
+description = "A collection of reusable machine learning pipeline helpers"
+readme = "README.md"
 authors = [
-    { name = "semiqolonn", email = "willianz@pm.me" },
+    {name = "Your Name", email = "your.email@example.com"}
 ]
-dependencies = [
-    "lightgbm==4.6.0",
-    "xgboost==3.0.2",
-    "catboost==1.2.8",
-    "numpy==2.2.6",
-    "scikit-learn==1.6.1",
-    "pandas==2.2.3",
-    "matplotlib==3.10.3",
-    "seaborn==0.13.2",
+license = {text = "MIT"}
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.12",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
 ]
 requires-python = ">=3.12"
-readme = "README.md"
-license = { file = "LICENSE" }
-keywords = ["machine-learning", "data-science", "pipeline", "utils"]
+dependencies = [
+    "numpy",
+    "pandas",
+    "scikit-learn",
+    "matplotlib",
+    "seaborn",
+    "lightgbm",
+    "xgboost",
+    "catboost",
+]
 
-[build-system]
-requires = ["setuptools>=80.8.0"] # Or 'wheel', 'flit', etc.
-build-backend = "setuptools.build_meta"
+[project.urls]
+"Homepage" = "https://github.com/yourusername/semiq-ml"
+"Bug Tracker" = "https://github.com/yourusername/semiq-ml/issues"
