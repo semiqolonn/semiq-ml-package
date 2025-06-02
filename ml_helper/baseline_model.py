@@ -76,26 +76,37 @@ class BaselineModel:
 
         self._set_metric_and_direction(metric)
 
-        # Mapping of metric names to sklearn metric functions
         self._metric_functions = {
             "accuracy": accuracy_score,
-            "f1_weighted": lambda y_true, y_pred: f1_score(
+            "f1_weighted": lambda y_true, y_pred, **kwargs: f1_score(
                 y_true, y_pred, average="weighted", zero_division=0
             ),
-            "roc_auc": lambda y_true, y_pred_proba, **kwargs: roc_auc_score(y_true, y_pred_proba, **kwargs),
-            "auc": lambda y_true, y_pred_proba, **kwargs: roc_auc_score(y_true, y_pred_proba, **kwargs), # Alias
-            "precision_weighted": lambda y_true, y_pred: precision_score(
+            "roc_auc": lambda y_true, y_pred_proba, **kwargs: roc_auc_score(
+                y_true, y_pred_proba, 
+                multi_class=kwargs.get('multi_class', 'raise'),
+                average=kwargs.get('average', 'macro')
+            ),
+            "auc": lambda y_true, y_pred_proba, **kwargs: roc_auc_score(
+                y_true, y_pred_proba,
+                multi_class=kwargs.get('multi_class', 'raise'), 
+                average=kwargs.get('average', 'macro')
+            ),  # Alias
+            "precision_weighted": lambda y_true, y_pred, **kwargs: precision_score(
                 y_true, y_pred, average="weighted", zero_division=0
             ),
-            "recall_weighted": lambda y_true, y_pred: recall_score(
+            "recall_weighted": lambda y_true, y_pred, **kwargs: recall_score(
                 y_true, y_pred, average="weighted", zero_division=0
             ),
-            "log_loss": lambda y_true, y_pred_proba, **kwargs: sk_log_loss(y_true, y_pred_proba, **kwargs),
-            "neg_root_mean_squared_error": lambda y_true, y_pred: -np.sqrt(
+            "log_loss": lambda y_true, y_pred_proba, **kwargs: sk_log_loss(
+                y_true, y_pred_proba, 
+                labels=kwargs.get('labels', None)
+            ),
+            # Keep other metrics as they are
+            "neg_root_mean_squared_error": lambda y_true, y_pred, **kwargs: -np.sqrt(
                 mean_squared_error(y_true, y_pred)
             ),
-            "r2": r2_score,
-            "neg_mean_absolute_error": lambda y_true, y_pred: -mean_absolute_error(
+            "r2": lambda y_true, y_pred, **kwargs: r2_score(y_true, y_pred),
+            "neg_mean_absolute_error": lambda y_true, y_pred, **kwargs: -mean_absolute_error(
                 y_true, y_pred
             ),
         }
