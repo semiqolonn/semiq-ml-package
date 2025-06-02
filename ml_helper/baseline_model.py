@@ -254,7 +254,7 @@ class BaselineModel:
         self.preprocessors_ = {} # Reset fitted preprocessors
         self._fitted_preprocessed_data_cache = {'train': {}, 'val': {}} # Cache for transformed data within this fit
 
-        original_X_for_catboost = X.copy() if isinstance(X, pd.DataFrame) else None
+        self.original_X_for_catboost = X.copy() if isinstance(X, pd.DataFrame) else None
         
         # Stratify for classification, not for regression
         stratify_opt = y if self.task_type == "classification" else None
@@ -408,7 +408,7 @@ class BaselineModel:
                 # Ensure X is in the correct format (DataFrame for CatBoost if it was trained on one)
                 is_catboost = model_info.get('preprocessor_used') == 'catboost_internal'
                 eval_X_raw = X
-                if is_catboost and not isinstance(X, pd.DataFrame) and isinstance(original_X_for_catboost, pd.DataFrame): # original_X_for_catboost from fit()
+                if is_catboost and not isinstance(X, pd.DataFrame) and isinstance(self.original_X_for_catboost, pd.DataFrame): # self.original_X_for_catboost from fit()
                      logger.warning(f"For CatBoost model '{name}', input X for evaluate_all should ideally be a DataFrame if trained on one. Attempting conversion if possible or using as is.")
                      # This part is tricky - if CatBoost expects specific column names/dtypes from training
                      # it's best if X matches that structure. Here we just pass X.
