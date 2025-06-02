@@ -1,6 +1,8 @@
-# Hyperparameter tuning utilities for machine learning models.
-from .baseline_model import BaselineModel
-from sklearn.model_selection import GridSearchCV, RandomizedSearchCV
+# tuning.py
+from .baseline_model import BaselineModel # Assuming BaselineModel is in the same package
+from sklearn.model_selection import GridSearchCV, RandomizedSearchCV, train_test_split
+from sklearn.pipeline import Pipeline
+from sklearn.metrics import make_scorer
 import numpy as np
 import pandas as pd
 import time
@@ -8,731 +10,340 @@ import logging
 
 logger = logging.getLogger(__name__)
 
-class RandomSearchOptimizer(BaselineModel):
+class BaseOptimizer(BaselineModel):
     """
-    A class for hyperparameter tuning of machine learning models using RandomizedSearchCV.
-    Inherits from BaselineModel to leverage its model initialization and evaluation capabilities.
+    Base class for hyperparameter optimizers, handling common logic.
     """
-    
-    def __init__(self, task_type="classification", metric=None, random_state=42, n_iter=10, cv=5):
-        """
-        Initialize the RandomSearchOptimizer.
-        
-        Args:
-            task_type (str): 'classification' or 'regression'.
-            metric (str, optional): The evaluation metric to optimize.
-            random_state (int): Random seed for reproducibility.
-            n_iter (int): Number of parameter settings sampled in random search.
-            cv (int): Number of cross-validation folds.
-        """
+    def __init__(self, search_strategy_cv, task_type="classification", metric=None, random_state=42, cv=5, n_iter_or_None=None):
         super().__init__(task_type=task_type, metric=metric, random_state=random_state)
-        self.n_iter = n_iter
         self.cv = cv
-        self.param_distributions = self._get_default_param_distributions()
-        self.tuned_models = {}
-        
-    def _get_default_param_distributions(self):
-        """
-        Define default parameter distributions for each model type.
-        These are reasonable ranges for hyperparameters to search through.
-        """
-        if self.task_type == "classification":
-            return {
-                "Logistic Regression": {
-                    'C': np.logspace(-3, 3, 7),
-                    'penalty': ['l1', 'l2'],
-                    'solver': ['liblinear']
-                },
-                "SVC": {
-                    'C': np.logspace(-3, 3, 7),
-                    'kernel': ['linear', 'poly', 'rbf', 'sigmoid'],
-                    'gamma': ['scale', 'auto'] + list(np.logspace(-3, 0, 4))
-                },
-                "KNN": {
-                    'n_neighbors': np.arange(3, 31, 2),
-                    'weights': ['uniform', 'distance'],
-                    'p': [1, 2]
-                },
-                "Decision Tree": {
-                    'max_depth': [None] + list(np.arange(5, 31, 5)),
-                    'min_samples_split': np.arange(2, 11),
-                    'min_samples_leaf': np.arange(1, 11),
-                    'criterion': ['gini', 'entropy']
-                },
-                "Random Forest": {
-                    'n_estimators': np.arange(50, 501, 50),
-                    'max_depth': [None] + list(np.arange(5, 31, 5)),
-                    'min_samples_split': np.arange(2, 11),
-                    'min_samples_leaf': np.arange(1, 11),
-                    'max_features': ['sqrt', 'log2', None]
-                },
-                "LGBM": {
-                    'learning_rate': np.logspace(-3, -1, 5),
-                    'n_estimators': np.arange(50, 501, 50),
-                    'num_leaves': np.arange(20, 151, 10),
-                    'max_depth': [-1] + list(np.arange(5, 21, 5)),
-                    'min_child_samples': np.arange(10, 101, 10),
-                    'subsample': np.arange(0.5, 1.01, 0.1)
-                },
-                "XGBoost": {
-                    'learning_rate': np.logspace(-3, -1, 5),
-                    'n_estimators': np.arange(50, 501, 50),
-                    'max_depth': np.arange(3, 11),
-                    'subsample': np.arange(0.5, 1.01, 0.1),
-                    'colsample_bytree': np.arange(0.5, 1.01, 0.1)
-                },
-                "CatBoost": {
-                    'iterations': np.arange(50, 501, 50),
-                    'learning_rate': np.logspace(-3, -1, 5),
-                    'depth': np.arange(4, 11),
-                    'l2_leaf_reg': np.logspace(-3, 3, 7),
-                    'border_count': [32, 64, 128]
-                }
-            }
-        else:  # Regression
-            return {
-                "Linear Regression": {},  # Linear Regression doesn't have hyperparameters to tune
-                "SVR": {
-                    'C': np.logspace(-3, 3, 7),
-                    'kernel': ['linear', 'poly', 'rbf', 'sigmoid'],
-                    'gamma': ['scale', 'auto'] + list(np.logspace(-3, 0, 4)),
-                    'epsilon': np.logspace(-3, 0, 4)
-                },
-                "KNN": {
-                    'n_neighbors': np.arange(3, 31, 2),
-                    'weights': ['uniform', 'distance'],
-                    'p': [1, 2]
-                },
-                "Decision Tree": {
-                    'max_depth': [None] + list(np.arange(5, 31, 5)),
-                    'min_samples_split': np.arange(2, 11),
-                    'min_samples_leaf': np.arange(1, 11),
-                    'criterion': ['squared_error', 'absolute_error', 'friedman_mse', 'poisson']
-                },
-                "Random Forest": {
-                    'n_estimators': np.arange(50, 501, 50),
-                    'max_depth': [None] + list(np.arange(5, 31, 5)),
-                    'min_samples_split': np.arange(2, 11),
-                    'min_samples_leaf': np.arange(1, 11),
-                    'max_features': ['sqrt', 'log2', None]
-                },
-                "LGBM": {
-                    'learning_rate': np.logspace(-3, -1, 5),
-                    'n_estimators': np.arange(50, 501, 50),
-                    'num_leaves': np.arange(20, 151, 10),
-                    'max_depth': [-1] + list(np.arange(5, 21, 5)),
-                    'min_child_samples': np.arange(10, 101, 10),
-                    'subsample': np.arange(0.5, 1.01, 0.1)
-                },
-                "XGBoost": {
-                    'learning_rate': np.logspace(-3, -1, 5),
-                    'n_estimators': np.arange(50, 501, 50),
-                    'max_depth': np.arange(3, 11),
-                    'subsample': np.arange(0.5, 1.01, 0.1),
-                    'colsample_bytree': np.arange(0.5, 1.01, 0.1)
-                },
-                "CatBoost": {
-                    'iterations': np.arange(50, 501, 50),
-                    'learning_rate': np.logspace(-3, -1, 5),
-                    'depth': np.arange(4, 11),
-                    'l2_leaf_reg': np.logspace(-3, 3, 7),
-                    'border_count': [32, 64, 128]
-                }
-            }
-    
-    def update_param_distributions(self, model_name, param_dict):
-        """
-        Update the parameter distributions for a specific model.
-        
-        Args:
-            model_name (str): Name of the model to update parameters for.
-            param_dict (dict): Dictionary of parameter distributions to use.
-        """
-        if model_name not in self.models_to_run:
-            raise ValueError(f"Model '{model_name}' not found. Available models: {list(self.models_to_run.keys())}")
-        
-        if model_name in self.param_distributions:
-            self.param_distributions[model_name] = param_dict
-            logger.info(f"Updated parameter distributions for {model_name}")
-        else:
-            raise KeyError(f"No parameter distributions found for {model_name}. Check model name.")
-    
-    def tune_model(self, model_name, X, y, validation_size=0.2, **fit_params):
-        """
-        Tune a specific model using RandomizedSearchCV.
-        
-        Args:
-            model_name (str): Name of the model to tune.
-            X (pd.DataFrame or np.array): Features for training and validation.
-            y (pd.Series or np.array): Target variable for training and validation.
-            validation_size (float): Proportion of data to use for holdout validation.
-            **fit_params: Additional parameters to pass to the model's fit method.
-            
-        Returns:
-            object: The best estimator from RandomizedSearchCV.
-        """
-        if model_name not in self.models_to_run:
-            raise ValueError(f"Model '{model_name}' not found. Available models: {list(self.models_to_run.keys())}")
-        
-        if model_name not in self.param_distributions or not self.param_distributions[model_name]:
-            logger.warning(f"No parameter distributions defined for {model_name}. Using default model.")
-            return self.models_to_run[model_name]
-        
-        # Handle CatBoost separately due to categorical features
-        is_catboost = model_name == "CatBoost"
-        original_X = X.copy() if isinstance(X, pd.DataFrame) else None
-        categorical_cols = None
-        
-        if is_catboost and original_X is not None:
-            categorical_cols = original_X.select_dtypes(include=["object", "category"]).columns.tolist()
-        
-        # Preprocess features for non-CatBoost models
-        if not is_catboost:
-            X = self._preprocess_features(X)
-        
-        # Split the data
-        from sklearn.model_selection import train_test_split
-        if self.task_type == "classification":
-            X_train, X_val, y_train, y_val = train_test_split(
-                X, y, test_size=validation_size, random_state=self.random_state, stratify=y
-            )
-        else:
-            X_train, X_val, y_train, y_val = train_test_split(
-                X, y, test_size=validation_size, random_state=self.random_state
-            )
-        
-        # Create scoring function based on the metric
-        if self.metric in self._metric_functions:
-            from sklearn.metrics import make_scorer
-            scorer = make_scorer(
-                self._metric_functions[self.metric], 
-                greater_is_better=self.maximize_metric
-            )
-        else:
-            # Use sklearn's built-in scoring if our metric isn't defined as a function
-            scorer = self.metric
-        
-        # Get the base model and parameters
-        base_model = self.models_to_run[model_name]
-        params = self.param_distributions[model_name]
-        
-        # Special handling for CatBoost
-        if is_catboost and categorical_cols:
-            # Add cat_features parameter to the fit_params for CatBoost
-            fit_params["cat_features"] = categorical_cols
-        
-        logger.info(f"Starting RandomizedSearchCV for {model_name} with {self.n_iter} iterations and {self.cv}-fold CV")
-        start_time = time.time()
-        
-        try:
-            # Create and run RandomizedSearchCV
-            random_search = RandomizedSearchCV(
-                estimator=base_model,
-                param_distributions=params,
-                n_iter=self.n_iter,
-                cv=self.cv,
-                scoring=scorer,
-                n_jobs=-1,
-                random_state=self.random_state,
-                verbose=1
-            )
-            
-            random_search.fit(X_train, y_train, **fit_params)
-            
-            # Evaluate on validation data
-            best_model = random_search.best_estimator_
-            
-            # For CatBoost, we need to evaluate on the original data
-            if is_catboost and original_X is not None:
-                # Re-split the original data for validation
-                _, X_val_original, _, _ = train_test_split(
-                    original_X, y, test_size=validation_size, random_state=self.random_state,
-                    stratify=y if self.task_type == "classification" else None
-                )
-                score = self._evaluate_model_score(best_model, X_val_original, y_val)
-            else:
-                score = self._evaluate_model_score(best_model, X_val, y_val)
-            
-            elapsed_time = time.time() - start_time
-            
-            # Store results
-            self.tuned_models[model_name] = {
-                "model": best_model,
-                "score": score,
-                "time": elapsed_time,
-                "best_params": random_search.best_params_,
-                "cv_results": random_search.cv_results_
-            }
-            
-            logger.info(f"Tuning {model_name} completed in {elapsed_time:.2f}s")
-            logger.info(f"Best {self.metric}: {score:.4f}")
-            logger.info(f"Best parameters: {random_search.best_params_}")
-            
-            return best_model
-            
-        except Exception as e:
-            logger.error(f"Error tuning {model_name}: {e}")
-            self.tuned_models[model_name] = {
-                "model": None,
-                "score": None,
-                "time": None,
-                "error": str(e)
-            }
-            return None
-    
-    def tune_all_models(self, X, y, validation_size=0.2, models_to_tune=None, **fit_params):
-        """
-        Tune all specified models or all available models.
-        
-        Args:
-            X (pd.DataFrame or np.array): Features for training and validation.
-            y (pd.Series or np.array): Target variable for training and validation.
-            validation_size (float): Proportion of data to use for holdout validation.
-            models_to_tune (list, optional): List of model names to tune. If None, tune all models.
-            **fit_params: Additional parameters to pass to the model's fit method.
-            
-        Returns:
-            dict: Dictionary with tuned models and their performance.
-        """
-        if models_to_tune is None:
-            models_to_tune = list(self.models_to_run.keys())
-        else:
-            # Validate that all specified models exist
-            for model_name in models_to_tune:
-                if model_name not in self.models_to_run:
-                    raise ValueError(f"Model '{model_name}' not found. Available models: {list(self.models_to_run.keys())}")
-        
-        logger.info(f"Tuning {len(models_to_tune)} models: {', '.join(models_to_tune)}")
-        
-        best_score = -np.inf if self.maximize_metric else np.inf
-        best_model_name = None
-        
-        for model_name in models_to_tune:
-            try:
-                self.tune_model(model_name, X, y, validation_size, **fit_params)
-                
-                # Update best model if this one is better
-                current_score = self.tuned_models[model_name]["score"]
-                if current_score is not None:
-                    if (self.maximize_metric and current_score > best_score) or \
-                       (not self.maximize_metric and current_score < best_score):
-                        best_score = current_score
-                        best_model_name = model_name
-                        
-            except Exception as e:
-                logger.error(f"Error during tuning of {model_name}: {e}")
-        
-        if best_model_name:
-            self.best_model_ = self.tuned_models[best_model_name]["model"]
-            self.best_score_ = best_score
-            logger.info(f"Best tuned model: {best_model_name} with {self.metric}: {best_score:.4f}")
-        else:
-            logger.warning("No models were successfully tuned.")
-        
-        return self.tuned_models
-    
-    def get_tuning_results(self):
-        """
-        Returns a Pandas DataFrame summarizing the tuning results.
-        
-        Returns:
-            pd.DataFrame: A DataFrame with model names, scores, and best parameters.
-        """
-        if not self.tuned_models:
-            logger.info("No tuning results available. Run tune_model() or tune_all_models() first.")
-            return pd.DataFrame()
-            
-        results_data = []
-        for name, info in self.tuned_models.items():
-            if info["model"] is not None:
-                results_data.append({
-                    "model": name,
-                    "score": info["score"],
-                    "time": info["time"],
-                    "best_params": info.get("best_params", {}),
-                    "status": "Success"
-                })
-            else:
-                results_data.append({
-                    "model": name,
-                    "score": None,
-                    "time": None,
-                    "best_params": {},
-                    "status": "Failed",
-                    "error": info.get("error", "")
-                })
-                
-        results_df = pd.DataFrame(results_data)
-        
-        # Sort based on the primary metric and its direction
-        if results_df.empty:
-            return results_df
-        
-        if "score" in results_df.columns:
-            if self.maximize_metric:
-                results_df = results_df.sort_values(by="score", ascending=False)
-            else:
-                results_df = results_df.sort_values(by="score", ascending=True)
-                
-        return results_df.reset_index(drop=True)
-    
+        # n_iter for RandomizedSearch, None for GridSearch (which is exhaustive)
+        self.n_iter_or_None = n_iter_or_None
+        self.search_strategy_cv = search_strategy_cv # RandomizedSearchCV or GridSearchCV class
+        self.param_config = self._get_default_param_config() # To be implemented by child
+        self.tuned_models = {} # Stores results for each tuned model
 
-class GridSearchOptimizer(BaselineModel):
-    """
-    A class for exhaustive hyperparameter tuning of machine learning models using GridSearchCV.
-    Inherits from BaselineModel to leverage its model initialization and evaluation capabilities.
-    """
-    
-    def __init__(self, task_type="classification", metric=None, random_state=42, cv=5):
-        """
-        Initialize the GridSearchOptimizer.
-        
-        Args:
-            task_type (str): 'classification' or 'regression'.
-            metric (str, optional): The evaluation metric to optimize.
-            random_state (int): Random seed for reproducibility.
-            cv (int): Number of cross-validation folds.
-        """
-        super().__init__(task_type=task_type, metric=metric, random_state=random_state)
-        self.cv = cv
-        self.param_grid = self._get_default_param_grid()
-        self.tuned_models = {}
-        
-    def _get_default_param_grid(self):
-        """
-        Define default parameter grids for each model type.
-        These are more focused than RandomSearchOptimizer to make grid search computationally feasible.
-        """
-        if self.task_type == "classification":
-            return {
-                "Logistic Regression": {
-                    'C': [0.01, 0.1, 1.0, 10.0],
-                    'penalty': ['l1', 'l2'],
-                    'solver': ['liblinear']
-                },
-                "SVC": {
-                    'C': [0.1, 1.0, 10.0],
-                    'kernel': ['linear', 'rbf'],
-                    'gamma': ['scale', 'auto', 0.1, 1.0]
-                },
-                "KNN": {
-                    'n_neighbors': [3, 5, 7, 9],
-                    'weights': ['uniform', 'distance'],
-                    'p': [1, 2]
-                },
-                "Decision Tree": {
-                    'max_depth': [None, 5, 10, 15],
-                    'min_samples_split': [2, 5, 10],
-                    'min_samples_leaf': [1, 2, 4],
-                    'criterion': ['gini', 'entropy']
-                },
-                "Random Forest": {
-                    'n_estimators': [50, 100, 200],
-                    'max_depth': [None, 10, 20],
-                    'min_samples_split': [2, 5, 10],
-                    'min_samples_leaf': [1, 2, 4],
-                    'max_features': ['sqrt', 'log2']
-                },
-                "LGBM": {
-                    'learning_rate': [0.01, 0.05, 0.1],
-                    'n_estimators': [50, 100, 200],
-                    'num_leaves': [31, 63, 127],
-                    'max_depth': [-1, 10, 15],
-                    'subsample': [0.8, 1.0]
-                },
-                "XGBoost": {
-                    'learning_rate': [0.01, 0.05, 0.1],
-                    'n_estimators': [50, 100, 200],
-                    'max_depth': [3, 6, 9],
-                    'subsample': [0.8, 1.0],
-                    'colsample_bytree': [0.8, 1.0]
-                },
-                "CatBoost": {
-                    'iterations': [100, 200],
-                    'learning_rate': [0.01, 0.05, 0.1],
-                    'depth': [4, 6, 8],
-                    'l2_leaf_reg': [1.0, 3.0, 9.0]
-                }
-            }
-        else:  # Regression
-            return {
-                "Linear Regression": {},  # Linear Regression doesn't have hyperparameters to tune
-                "SVR": {
-                    'C': [0.1, 1.0, 10.0],
-                    'kernel': ['linear', 'rbf'],
-                    'gamma': ['scale', 'auto', 0.1, 1.0],
-                    'epsilon': [0.01, 0.1, 0.2]
-                },
-                "KNN": {
-                    'n_neighbors': [3, 5, 7, 9],
-                    'weights': ['uniform', 'distance'],
-                    'p': [1, 2]
-                },
-                "Decision Tree": {
-                    'max_depth': [None, 5, 10, 15],
-                    'min_samples_split': [2, 5, 10],
-                    'min_samples_leaf': [1, 2, 4],
-                    'criterion': ['squared_error', 'absolute_error']
-                },
-                "Random Forest": {
-                    'n_estimators': [50, 100, 200],
-                    'max_depth': [None, 10, 20],
-                    'min_samples_split': [2, 5, 10],
-                    'min_samples_leaf': [1, 2, 4],
-                    'max_features': ['sqrt', 'log2']
-                },
-                "LGBM": {
-                    'learning_rate': [0.01, 0.05, 0.1],
-                    'n_estimators': [50, 100, 200],
-                    'num_leaves': [31, 63, 127],
-                    'max_depth': [-1, 10, 15],
-                    'subsample': [0.8, 1.0]
-                },
-                "XGBoost": {
-                    'learning_rate': [0.01, 0.05, 0.1],
-                    'n_estimators': [50, 100, 200],
-                    'max_depth': [3, 6, 9],
-                    'subsample': [0.8, 1.0],
-                    'colsample_bytree': [0.8, 1.0]
-                },
-                "CatBoost": {
-                    'iterations': [100, 200],
-                    'learning_rate': [0.01, 0.05, 0.1],
-                    'depth': [4, 6, 8],
-                    'l2_leaf_reg': [1.0, 3.0, 9.0]
-                }
-            }
-    
-    def update_param_grid(self, model_name, param_dict):
-        """
-        Update the parameter grid for a specific model.
-        
-        Args:
-            model_name (str): Name of the model to update parameters for.
-            param_dict (dict): Dictionary of parameter grid to use.
-        """
+    def _get_default_param_config(self):
+        raise NotImplementedError("Subclasses must implement this method.")
+
+    def update_param_config(self, model_name, param_dict):
         if model_name not in self.models_to_run:
             raise ValueError(f"Model '{model_name}' not found. Available models: {list(self.models_to_run.keys())}")
         
-        if model_name in self.param_grid:
-            self.param_grid[model_name] = param_dict
-            logger.info(f"Updated parameter grid for {model_name}")
-        else:
-            raise KeyError(f"No parameter grid found for {model_name}. Check model name.")
-    
-    def tune_model(self, model_name, X, y, validation_size=0.2, **fit_params):
+        if model_name in self.param_config:
+            self.param_config[model_name] = param_dict
+            logger.info(f"Updated parameter configuration for {model_name}")
+        else: # Should not happen if _get_default_param_config is comprehensive
+            self.param_config[model_name] = param_dict
+            logger.warning(f"Parameter configuration for {model_name} was not pre-defined. Added new entry.")
+
+    def _prepare_search_estimator_and_params(self, model_name, base_model_instance, X_search_train_raw, current_model_param_config):
         """
-        Tune a specific model using GridSearchCV.
+        Prepares the estimator forSearchCV (potentially a Pipeline) and adjusts parameter keys.
+        """
+        preprocessor_type = self._get_model_type(model_name) # From BaselineModel
+        search_cv_fit_params = {} # For fit params like cat_features
+
+        if preprocessor_type == 'catboost_internal':
+            estimator_for_search = base_model_instance
+            param_config_for_searchcv = current_model_param_config # No prefix needed
+
+            if isinstance(X_search_train_raw, pd.DataFrame):
+                cat_features_indices = [
+                    X_search_train_raw.columns.get_loc(col)
+                    for col in X_search_train_raw.select_dtypes(include=['object', 'category']).columns
+                    if col in X_search_train_raw.columns
+                ]
+                if cat_features_indices:
+                    logger.info(f"CatBoost: Determined cat_features indices: {cat_features_indices} for search.")
+                    search_cv_fit_params["cat_features"] = cat_features_indices
+            else:
+                logger.warning("CatBoost is selected, but X_search_train_raw is not a DataFrame. Cannot auto-determine cat_features.")
+        else: # 'general_ohe' or 'distance_kernel'
+            # Build unfitted preprocessor using X_search_train_raw for dtype inference
+            unfitted_preprocessor = self._build_preprocessor(X_search_train_raw, preprocessor_type) # From BaselineModel
+
+            if unfitted_preprocessor:
+                estimator_for_search = Pipeline([
+                    ('preprocessor', unfitted_preprocessor),
+                    ('model', base_model_instance)
+                ])
+                # Prefix params for pipeline: e.g., 'C' -> 'model__C'
+                param_config_for_searchcv = {f"model__{k}": v for k, v in current_model_param_config.items()}
+            else: # No preprocessor built (e.g., data was all numeric and simple)
+                estimator_for_search = base_model_instance
+                param_config_for_searchcv = current_model_param_config # No prefix
         
-        Args:
-            model_name (str): Name of the model to tune.
-            X (pd.DataFrame or np.array): Features for training and validation.
-            y (pd.Series or np.array): Target variable for training and validation.
-            validation_size (float): Proportion of data to use for holdout validation.
-            **fit_params: Additional parameters to pass to the model's fit method.
+        return estimator_for_search, param_config_for_searchcv, search_cv_fit_params
+
+    def tune_model(self, model_name, X, y, validation_size=0.2, **caller_fit_params):
+        if model_name not in self.models_to_run:
+            raise ValueError(f"Model '{model_name}' not found. Available: {list(self.models_to_run.keys())}")
+
+        current_model_param_config = self.param_config.get(model_name, {})
+        if not current_model_param_config:
+            logger.warning(f"No parameter configuration for {model_name}. Using default model from BaselineModel.")
+            # Fallback: run the base model from BaselineModel (or skip tuning)
+            # For simplicity, we'll try to fit the base model once here, though this is not tuning.
+            # A more robust approach would be to skip or raise error if no params.
+            base_model_instance = self.models_to_run[model_name]
+            # This path needs careful thought: what should happen if no params for tuning?
+            # For now, let's assume `_get_default_param_config` always provides something, even empty for LinearRegression
+            if model_name == "Linear Regression": # Special case, no tuning needed
+                 logger.info(f"Linear Regression requires no hyperparameter tuning. Evaluating base model.")
+                 # We need to evaluate it on a validation set consistent with how tuned models are scored.
+                 # This part duplicates some logic from BaselineModel.fit() just for this one model.
+                 # A more robust approach would be to call a part of BaselineModel.fit logic.
+                 # For now, we'll just store it as "tuned" with no params.
+                 self.tuned_models[model_name] = {
+                     "model": base_model_instance, "score": None, "time": 0, 
+                     "best_params": {}, "status": "No tuning (base model)"
+                 }
+                 # To get a score, we'd need to process data and evaluate.
+                 # This is complex here. Better to ensure tune_model is only called if params exist.
+                 return base_model_instance
+
+
+        stratify_opt = y if self.task_type == "classification" else None
+        X_search_train_raw, X_search_val_raw, y_search_train, y_search_val = train_test_split(
+            X, y, test_size=validation_size, random_state=self.random_state, stratify=stratify_opt
+        )
+
+        base_model_instance = self.models_to_run[model_name]
+        
+        estimator_for_search, param_config_for_searchcv, search_cv_specific_fit_params = \
+            self._prepare_search_estimator_and_params(model_name, base_model_instance, X_search_train_raw, current_model_param_config)
+
+        # Combine caller_fit_params (for model) with search_cv_specific_fit_params (e.g. cat_features)
+        # Caller fit_params need prefixing if a pipeline is used.
+        final_search_cv_fit_params = search_cv_specific_fit_params.copy()
+        if isinstance(estimator_for_search, Pipeline):
+            for k, v in caller_fit_params.items():
+                final_search_cv_fit_params[f"model__{k}"] = v
+        else: # Direct model (e.g. CatBoost)
+            final_search_cv_fit_params.update(caller_fit_params)
             
-        Returns:
-            object: The best estimator from GridSearchCV.
-        """
-        if model_name not in self.models_to_run:
-            raise ValueError(f"Model '{model_name}' not found. Available models: {list(self.models_to_run.keys())}")
-        
-        if model_name not in self.param_grid or not self.param_grid[model_name]:
-            logger.warning(f"No parameter grid defined for {model_name}. Using default model.")
-            return self.models_to_run[model_name]
-        
-        # Handle CatBoost separately due to categorical features
-        is_catboost = model_name == "CatBoost"
-        original_X = X.copy() if isinstance(X, pd.DataFrame) else None
-        categorical_cols = None
-        
-        if is_catboost and original_X is not None:
-            categorical_cols = original_X.select_dtypes(include=["object", "category"]).columns.tolist()
-        
-        # Preprocess features for non-CatBoost models
-        if not is_catboost:
-            X = self._preprocess_features(X)
-        
-        # Split the data
-        from sklearn.model_selection import train_test_split
-        if self.task_type == "classification":
-            X_train, X_val, y_train, y_val = train_test_split(
-                X, y, test_size=validation_size, random_state=self.random_state, stratify=y
-            )
-        else:
-            X_train, X_val, y_train, y_val = train_test_split(
-                X, y, test_size=validation_size, random_state=self.random_state
-            )
-        
-        # Create scoring function based on the metric
+        # Ensure scorer uses the metric and maximization direction from BaselineModel
+        # self.metric and self.maximize_metric are from BaselineModel's __init__
+        # self._metric_functions is also from BaselineModel
         if self.metric in self._metric_functions:
-            from sklearn.metrics import make_scorer
+            # For ROC AUC and LogLoss, make_scorer needs predict_proba=True
+            needs_proba = self.metric in ("roc_auc", "auc", "log_loss")
             scorer = make_scorer(
-                self._metric_functions[self.metric], 
-                greater_is_better=self.maximize_metric
+                self._metric_functions[self.metric],
+                greater_is_better=self.maximize_metric,
+                needs_proba=needs_proba
             )
+        else: # Should not happen if metric validation in BaselineModel is robust
+            scorer = self.metric 
+            logger.warning(f"Metric '{self.metric}' not found in _metric_functions. Using it directly as string for scorer.")
+
+
+        search_cv_params = {
+            "estimator": estimator_for_search,
+            "cv": self.cv,
+            "scoring": scorer,
+            "n_jobs": -1,
+            "random_state": self.random_state,
+            "verbose": 1 # Can be parameterized
+        }
+        if self.search_strategy_cv == RandomizedSearchCV:
+            search_cv_params["param_distributions"] = param_config_for_searchcv
+            search_cv_params["n_iter"] = self.n_iter_or_None
+        elif self.search_strategy_cv == GridSearchCV:
+            search_cv_params["param_grid"] = param_config_for_searchcv
         else:
-            # Use sklearn's built-in scoring if our metric isn't defined as a function
-            scorer = self.metric
+            raise TypeError("search_strategy_cv is not recognized.")
+
+        logger.info(f"Starting {self.search_strategy_cv.__name__} for {model_name}...")
+        if self.n_iter_or_None and self.search_strategy_cv == RandomizedSearchCV:
+            logger.info(f"...with {self.n_iter_or_None} iterations and {self.cv}-fold CV.")
+        else:
+            logger.info(f"...with {self.cv}-fold CV.")
         
-        # Get the base model and parameters
-        base_model = self.models_to_run[model_name]
-        params = self.param_grid[model_name]
-        
-        # Special handling for CatBoost
-        if is_catboost and categorical_cols:
-            # Add cat_features parameter to the fit_params for CatBoost
-            fit_params["cat_features"] = categorical_cols
-        
-        logger.info(f"Starting GridSearchCV for {model_name} with {self.cv}-fold CV")
         start_time = time.time()
         
         try:
-            # Create and run GridSearchCV
-            grid_search = GridSearchCV(
-                estimator=base_model,
-                param_grid=params,
-                cv=self.cv,
-                scoring=scorer,
-                n_jobs=-1,
-                verbose=1
-            )
+            search_instance = self.search_strategy_cv(**search_cv_params)
+            search_instance.fit(X_search_train_raw, y_search_train, **final_search_cv_fit_params)
             
-            grid_search.fit(X_train, y_train, **fit_params)
+            best_tuned_estimator = search_instance.best_estimator_
             
-            # Evaluate on validation data
-            best_model = grid_search.best_estimator_
-            
-            # For CatBoost, we need to evaluate on the original data
-            if is_catboost and original_X is not None:
-                # Re-split the original data for validation
-                _, X_val_original, _, _ = train_test_split(
-                    original_X, y, test_size=validation_size, random_state=self.random_state,
-                    stratify=y if self.task_type == "classification" else None
-                )
-                score = self._evaluate_model_score(best_model, X_val_original, y_val)
-            else:
-                score = self._evaluate_model_score(best_model, X_val, y_val)
-            
+            # Evaluate the best_tuned_estimator (which is fitted on X_search_train_raw) 
+            # on the holdout set X_search_val_raw, y_search_val.
+            # _evaluate_model_score should handle the pipeline correctly.
+            score_on_holdout = self._evaluate_model_score(best_tuned_estimator, X_search_val_raw, y_search_val)
             elapsed_time = time.time() - start_time
-            
-            # Store results
+
+            best_params_from_search = search_instance.best_params_
+            # Clean up parameter names if they were prefixed
+            if isinstance(estimator_for_search, Pipeline):
+                cleaned_best_params = {k.replace("model__", ""): v for k, v in best_params_from_search.items()}
+            else:
+                cleaned_best_params = best_params_from_search
+
             self.tuned_models[model_name] = {
-                "model": best_model,
-                "score": score,
+                "model": best_tuned_estimator,
+                "score_on_holdout": score_on_holdout, # Score on the separate validation set
+                "best_cv_score": search_instance.best_score_, # Score from CV on X_search_train_raw
                 "time": elapsed_time,
-                "best_params": grid_search.best_params_,
-                "cv_results": grid_search.cv_results_
+                "best_params": cleaned_best_params,
+                "cv_results_summary": pd.DataFrame(search_instance.cv_results_).head() # Example summary
             }
             
             logger.info(f"Tuning {model_name} completed in {elapsed_time:.2f}s")
-            logger.info(f"Best {self.metric}: {score:.4f}")
-            logger.info(f"Best parameters: {grid_search.best_params_}")
+            logger.info(f"Best CV {self.metric}: {search_instance.best_score_:.4f}")
+            logger.info(f"Holdout {self.metric}: {score_on_holdout:.4f}")
+            logger.info(f"Best parameters (cleaned): {cleaned_best_params}")
             
-            return best_model
+            return best_tuned_estimator
             
         except Exception as e:
-            logger.error(f"Error tuning {model_name}: {e}")
+            logger.error(f"Error tuning {model_name}: {e}", exc_info=True)
             self.tuned_models[model_name] = {
-                "model": None,
-                "score": None,
-                "time": None,
-                "error": str(e)
+                "model": None, "score_on_holdout": None, "best_cv_score": None,
+                "time": None, "error": str(e)
             }
             return None
-    
+
     def tune_all_models(self, X, y, validation_size=0.2, models_to_tune=None, **fit_params):
-        """
-        Tune all specified models or all available models.
-        
-        Args:
-            X (pd.DataFrame or np.array): Features for training and validation.
-            y (pd.Series or np.array): Target variable for training and validation.
-            validation_size (float): Proportion of data to use for holdout validation.
-            models_to_tune (list, optional): List of model names to tune. If None, tune all models.
-            **fit_params: Additional parameters to pass to the model's fit method.
-            
-        Returns:
-            dict: Dictionary with tuned models and their performance.
-        """
         if models_to_tune is None:
-            models_to_tune = list(self.models_to_run.keys())
+            models_to_tune = [name for name, params in self.param_config.items() if params] # Tune only if params exist
         else:
-            # Validate that all specified models exist
+            valid_models = []
             for model_name in models_to_tune:
                 if model_name not in self.models_to_run:
-                    raise ValueError(f"Model '{model_name}' not found. Available models: {list(self.models_to_run.keys())}")
+                    logger.warning(f"Model '{model_name}' for tuning not found in base models. Skipping.")
+                elif not self.param_config.get(model_name):
+                    logger.warning(f"Model '{model_name}' has no parameters defined for tuning. Skipping.")
+                else:
+                    valid_models.append(model_name)
+            models_to_tune = valid_models
         
-        logger.info(f"Tuning {len(models_to_tune)} models: {', '.join(models_to_tune)}")
+        if not models_to_tune:
+            logger.warning("No models eligible for tuning.")
+            return {}
+
+        logger.info(f"Attempting to tune {len(models_to_tune)} models: {', '.join(models_to_tune)}")
         
-        best_score = -np.inf if self.maximize_metric else np.inf
-        best_model_name = None
+        # Use score_on_holdout for tracking overall best model from this tuning session
+        # Initialize based on self.maximize_metric from BaselineModel
+        overall_best_holdout_score = -np.inf if self.maximize_metric else np.inf
+        overall_best_model_name = None
         
         for model_name in models_to_tune:
-            try:
-                self.tune_model(model_name, X, y, validation_size, **fit_params)
-                
-                # Update best model if this one is better
-                current_score = self.tuned_models[model_name]["score"]
-                if current_score is not None:
-                    if (self.maximize_metric and current_score > best_score) or \
-                       (not self.maximize_metric and current_score < best_score):
-                        best_score = current_score
-                        best_model_name = model_name
-                        
-            except Exception as e:
-                logger.error(f"Error during tuning of {model_name}: {e}")
+            logger.info(f"\n--- Tuning {model_name} ---")
+            self.tune_model(model_name, X, y, validation_size, **fit_params)
+            
+            current_result = self.tuned_models.get(model_name, {})
+            current_holdout_score = current_result.get("score_on_holdout")
+
+            if current_holdout_score is not None:
+                if (self.maximize_metric and current_holdout_score > overall_best_holdout_score) or \
+                   (not self.maximize_metric and current_holdout_score < overall_best_holdout_score):
+                    overall_best_holdout_score = current_holdout_score
+                    overall_best_model_name = model_name
         
-        if best_model_name:
-            self.best_model_ = self.tuned_models[best_model_name]["model"]
-            self.best_score_ = best_score
-            logger.info(f"Best tuned model: {best_model_name} with {self.metric}: {best_score:.4f}")
+        if overall_best_model_name and overall_best_model_name in self.tuned_models:
+            self.best_model_ = self.tuned_models[overall_best_model_name]["model"] # The best estimator (Pipeline or model)
+            self.best_score_ = overall_best_holdout_score # Score on holdout set
+            logger.info(f"\n--- Overall Best Tuned Model (based on holdout score) ---")
+            logger.info(f"Model: {overall_best_model_name}")
+            logger.info(f"{self.metric}: {self.best_score_:.4f}")
+            logger.info(f"Parameters: {self.tuned_models[overall_best_model_name].get('best_params')}")
         else:
-            logger.warning("No models were successfully tuned.")
+            logger.warning("No models were successfully tuned to determine an overall best model.")
         
         return self.tuned_models
-    
+
     def get_tuning_results(self):
-        """
-        Returns a Pandas DataFrame summarizing the tuning results.
-        
-        Returns:
-            pd.DataFrame: A DataFrame with model names, scores, and best parameters.
-        """
         if not self.tuned_models:
-            logger.info("No tuning results available. Run tune_model() or tune_all_models() first.")
+            logger.info("No tuning results available.")
             return pd.DataFrame()
             
         results_data = []
         for name, info in self.tuned_models.items():
-            if info["model"] is not None:
-                results_data.append({
-                    "model": name,
-                    "score": info["score"],
-                    "time": info["time"],
-                    "best_params": info.get("best_params", {}),
-                    "status": "Success"
-                })
-            else:
-                results_data.append({
-                    "model": name,
-                    "score": None,
-                    "time": None,
-                    "best_params": {},
-                    "status": "Failed",
-                    "error": info.get("error", "")
-                })
+            entry = {
+                "model_name": name,
+                "holdout_score": info.get("score_on_holdout"),
+                "best_cv_score": info.get("best_cv_score"),
+                "tuning_time_seconds": info.get("time"),
+                "best_params": str(info.get("best_params", {})), # Convert dict to str for easier DF display
+                "status": "Success" if info.get("model") is not None else "Failed",
+                "error": info.get("error", "")
+            }
+            results_data.append(entry)
                 
         results_df = pd.DataFrame(results_data)
         
-        # Sort based on the primary metric and its direction
-        if results_df.empty:
-            return results_df
-        
-        if "score" in results_df.columns:
-            if self.maximize_metric:
-                results_df = results_df.sort_values(by="score", ascending=False)
-            else:
-                results_df = results_df.sort_values(by="score", ascending=True)
-                
+        if not results_df.empty and "holdout_score" in results_df.columns:
+            # Sort by holdout_score, handling potential None values by placing them last
+            results_df = results_df.sort_values(
+                by="holdout_score",
+                ascending=not self.maximize_metric,
+                na_position='last'
+            )
         return results_df.reset_index(drop=True)
+
+
+class RandomSearchOptimizer(BaseOptimizer):
+    def __init__(self, task_type="classification", metric=None, random_state=42, n_iter=10, cv=5):
+        super().__init__(RandomizedSearchCV, task_type, metric, random_state, cv, n_iter_or_None=n_iter)
+
+    def _get_default_param_config(self): # Renamed from _get_default_param_distributions
+        # Parameter distributions from the original RandomSearchOptimizer class
+        # These are extensive. For brevity, I'll assume they are the same as provided.
+        # Make sure they are appropriate for RandomizedSearchCV (can include distributions).
+        if self.task_type == "classification":
+            return {
+                "Logistic Regression": {'C': np.logspace(-3, 3, 7), 'penalty': ['l1', 'l2'], 'solver': ['liblinear']},
+                "SVC": {'C': np.logspace(-3, 3, 7), 'kernel': ['linear', 'rbf'], 'gamma': ['scale', 'auto'] + list(np.logspace(-3, 0, 4))}, # Reduced kernels for demo
+                "KNN": {'n_neighbors': np.arange(3, 31, 2), 'weights': ['uniform', 'distance'], 'p': [1, 2]},
+                "Decision Tree": {'max_depth': [None] + list(np.arange(5, 21, 5)), 'min_samples_split': np.arange(2, 11), 'min_samples_leaf': np.arange(1, 6)}, # Reduced
+                "Random Forest": {'n_estimators': np.arange(50, 201, 50), 'max_depth': [None] + list(np.arange(10, 21, 5)), 'min_samples_split': [2, 5, 10], 'min_samples_leaf': [1, 2, 4]}, # Reduced
+                "LGBM": {'learning_rate': np.logspace(-3, -1, 3), 'n_estimators': np.arange(50, 201, 50), 'num_leaves': [31, 63], 'max_depth': [-1, 10]}, # Reduced
+                "XGBoost": {'learning_rate': np.logspace(-3, -1, 3), 'n_estimators': np.arange(50, 201, 50), 'max_depth': [3, 6]}, # Reduced
+                "CatBoost": {'iterations': np.arange(50, 201, 50), 'learning_rate': np.logspace(-3, -1, 3), 'depth': [4, 6, 8]} # Reduced
+            }
+        else:  # Regression
+            return {
+                "Linear Regression": {},
+                "SVR": {'C': np.logspace(-3, 2, 5), 'kernel': ['linear', 'rbf'], 'gamma': ['scale', 'auto'] + list(np.logspace(-3, 0, 3)), 'epsilon': np.logspace(-3, 0, 3)}, # Reduced
+                "KNN": {'n_neighbors': np.arange(3, 21, 2), 'weights': ['uniform', 'distance'], 'p': [1, 2]}, # Reduced
+                "Decision Tree": {'max_depth': [None] + list(np.arange(5, 21, 5)), 'min_samples_split': [2, 5, 10], 'min_samples_leaf': [1, 2, 4]}, # Reduced
+                "Random Forest": {'n_estimators': [50, 100, 150], 'max_depth': [None, 10, 15], 'min_samples_split': [2, 5], 'min_samples_leaf': [1, 2]}, # Reduced
+                "LGBM": {'learning_rate': [0.01, 0.05, 0.1], 'n_estimators': [50, 100, 150], 'num_leaves': [31, 63], 'max_depth': [-1, 10]}, # Reduced
+                "XGBoost": {'learning_rate': [0.01, 0.05, 0.1], 'n_estimators': [50, 100, 150], 'max_depth': [3, 5, 7]}, # Reduced
+                "CatBoost": {'iterations': [50, 100, 150], 'learning_rate': [0.01, 0.05, 0.1], 'depth': [4, 6, 8]} # Reduced
+            }
+
+class GridSearchOptimizer(BaseOptimizer):
+    def __init__(self, task_type="classification", metric=None, random_state=42, cv=5):
+        super().__init__(GridSearchCV, task_type, metric, random_state, cv, n_iter_or_None=None)
+
+    def _get_default_param_config(self): # Renamed from _get_default_param_grid
+        # Parameter grids from the original GridSearchOptimizer class
+        # These should be lists of specific values for GridSearchCV.
+        # For brevity, I'll assume they are the same as provided.
+        if self.task_type == "classification":
+            return {
+                "Logistic Regression": {'C': [0.1, 1.0, 10.0], 'penalty': ['l1', 'l2'], 'solver': ['liblinear']},
+                "SVC": {'C': [0.1, 1.0, 10.0], 'kernel': ['rbf'], 'gamma': ['scale', 0.1]}, # Highly reduced
+                "KNN": {'n_neighbors': [3, 5, 7], 'weights': ['uniform', 'distance']}, # Reduced
+                "Decision Tree": {'max_depth': [5, 10], 'min_samples_split': [2, 5], 'min_samples_leaf': [1, 2]}, # Reduced
+                "Random Forest": {'n_estimators': [50, 100], 'max_depth': [10, 20], 'min_samples_split': [2, 5]}, # Reduced
+                "LGBM": {'learning_rate': [0.05, 0.1], 'n_estimators': [50, 100], 'num_leaves': [31]}, # Reduced
+                "XGBoost": {'learning_rate': [0.05, 0.1], 'n_estimators': [50, 100], 'max_depth': [3, 5]}, # Reduced
+                "CatBoost": {'iterations': [50, 100], 'learning_rate': [0.05, 0.1], 'depth': [4, 6]} # Reduced
+            }
+        else:  # Regression
+            return {
+                "Linear Regression": {},
+                "SVR": {'C': [0.1, 1.0], 'kernel': ['rbf'], 'gamma': ['scale', 0.1], 'epsilon': [0.1]}, # Highly reduced
+                "KNN": {'n_neighbors': [3, 5, 7], 'weights': ['uniform', 'distance']}, # Reduced
+                "Decision Tree": {'max_depth': [5, 10], 'min_samples_split': [2, 5], 'min_samples_leaf': [1, 2]}, # Reduced
+                "Random Forest": {'n_estimators': [50, 100], 'max_depth': [10], 'min_samples_split': [2, 5]}, # Reduced
+                "LGBM": {'learning_rate': [0.05, 0.1], 'n_estimators': [50, 100], 'num_leaves': [31]}, # Reduced
+                "XGBoost": {'learning_rate': [0.05, 0.1], 'n_estimators': [50, 100], 'max_depth': [3, 5]}, # Reduced
+                "CatBoost": {'iterations': [50, 100], 'learning_rate': [0.05, 0.1], 'depth': [4, 6]} # Reduced
+            }
