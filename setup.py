@@ -7,4 +7,11 @@ setup(
     install_requires=[
         # ... your dependencies ...
     ],
+    extras_require={
+        'test': [
+            'pytest>=7.0.0',
+            'pytest-cov>=4.0.0',
+            'pytest-mock>=3.10.0',
+        ],
+    },
 )

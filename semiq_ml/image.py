@@ -8,6 +8,13 @@ from typing import List, Tuple, Optional, Dict, Set, Any, Union
 from tqdm.auto import tqdm
 import matplotlib.pyplot as plt
 
+import logging
+logger = logging.getLogger(__name__)
+# Basic config if not already set by the user of the library
+if not logger.hasHandlers():
+    logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s")
+
+
 # --- DataFrame Creation ---
 
 def path_to_dataframe(
