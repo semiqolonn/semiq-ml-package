@@ -551,3 +551,12 @@ class BaselineModel:
     def precision_recall_curves(self, X, y): # Corrected typo
         """Plots Precision-Recall curves for classification models."""
         self._plot_curves(X, y, curve_type="precision_recall")
+
+
+class TimeseriesBaseline():
+    """
+    Placeholder for a future class to handle timeseries-specific baseline models.
+    Currently, this class does not implement any functionality.
+    """
+    def __init__(self):
+        raise NotImplementedError("TimeseriesBaseline is not yet implemented.")
