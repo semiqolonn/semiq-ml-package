@@ -5,3 +5,6 @@ catboost_info/
 /semiq_ml.egg-info/
 /dist/
 /ml-helper.wiki/
+
+.coverage
+.coverage.*
