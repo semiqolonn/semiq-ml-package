@@ -188,7 +188,7 @@ def load_image_as_array(
 def load_images_from_dataframe(
     df: pd.DataFrame,
     image_col: str = 'path',
-    label_col: Optional[str] = 'label',
+    label_col: Optional[str] = None,
     size: Optional[Tuple[int, int]] = None,
     mode: str = 'RGB',
     resample_algo: Optional[Image.Resampling] = Image.Resampling.LANCZOS,
@@ -217,8 +217,8 @@ def load_images_from_dataframe(
     """
     images = []
     labels = []
-    has_labels = label_col and label_col in df.columns
-
+    has_labels = label_col is not None and label_col in df.columns  # Changed condition
+    
     iterable = df.iterrows()
     if show_progress:
         iterable = tqdm(df.iterrows(), total=len(df), desc="Loading images")
@@ -254,7 +254,7 @@ def load_images_from_dataframe(
 # --- Image Utilities ---
 
 def display_images(
-    images: Union[np.ndarray, List[np.ndarray]],
+    images: Union[np.ndarray, List[np.ndarray], Tuple[np.ndarray, np.ndarray]],
     labels: Optional[Union[List[Any], np.ndarray]] = None,
     predictions: Optional[Union[List[Any], np.ndarray]] = None,
     n_cols: int = 5,
@@ -275,12 +275,17 @@ def display_images(
         figsize_per_image (Tuple[int, int]): Approximate (width, height) for each subplot in inches.
         class_names (Optional[Dict[Any, str]]): Dictionary mapping label values to human-readable names.
     """
+    if isinstance(images, tuple) and len(images) == 2:
+        # It's likely (images_array, labels_array) from load_images_from_dataframe
+        if labels is None:  # Only use tuple labels if none were explicitly provided
+            labels = images[1]
+        images = images[0]
+    
     if not isinstance(images, list):
         # Handle single image or batch of images as np.ndarray
         if images.ndim == 2 or (images.ndim == 3 and images.shape[-1] in [1, 3, 4]): # Single image
             images = [images]
-        # If images.ndim == 4 (N, H, W, C) or 3 (N, H, W for grayscale), it will be iterated correctly.
-    
+   
     num_images = len(images)
     if num_images == 0:
         print("No images to display.")
