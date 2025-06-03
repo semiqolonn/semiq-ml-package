@@ -8,7 +8,7 @@ version = "0.1.3"
 description = "A collection of reusable machine learning pipeline helpers"
 readme = "README.md"
 authors = [
-    {name = "semiqolonn", email = "willianz@pm.me"}
+    {name = "Malfino Willianz", email = "willianz@pm.me"}
 ]
 license = {text = "MIT"}
 classifiers = [
