@@ -553,7 +553,7 @@ class BaselineModel:
         self._plot_curves(X, y, curve_type="precision_recall")
 
 
-class TimeseriesBaseline():
+class Timeseries():
     """
     Placeholder for a future class to handle timeseries-specific baseline models.
     Currently, this class does not implement any functionality.
