@@ -299,16 +299,16 @@ class BaselineModel:
                 "KNN": KNeighborsRegressor(),
                 "Decision Tree": DecisionTreeRegressor(random_state=self.random_state),
                 "Random Forest": RandomForestRegressor(random_state=self.random_state),
-                "LGBM": LGBMClassifier(
+                "LGBM": LGBMRegressor(  # Fixed: Changed from LGBMClassifier
                     random_state=self.random_state, 
                     verbosity=-1,
                     metric=self._get_lgbm_metric() if hasattr(self, 'n_classes_') else None
                 ),
-                "XGBoost": XGBClassifier(
+                "XGBoost": XGBRegressor(  # Fixed: Changed from XGBClassifier
                     random_state=self.random_state, 
                     eval_metric=self._get_xgb_eval_metric()
                 ),
-                "CatBoost": CatBoostClassifier(
+                "CatBoost": CatBoostRegressor(  # Fixed: Changed from CatBoostClassifier
                     random_state=self.random_state, 
                     silent=True,
                     loss_function=self._get_catboost_loss() if hasattr(self, 'n_classes_') else None
@@ -329,6 +329,13 @@ class BaselineModel:
         """Calculates the score for a given model and primary metric."""
         metric_fn = self._metric_functions[self.metric]
         
+        # Handle label encoding if needed
+        original_y_val = y_val
+        if hasattr(self, 'label_encoder_') and self.label_encoder_ is not None:
+            # If we used label encoding during training, ensure y_val matches the encoded format
+            if not np.issubdtype(np.array(y_val).dtype, np.number):
+                y_val = self.label_encoder_.transform(y_val)
+        
         if self.task_type == "classification":
             if self.metric in ("roc_auc", "auc", "log_loss"):
                 if hasattr(model, "predict_proba"):
@@ -336,13 +343,17 @@ class BaselineModel:
                     kwargs = {}
                     # For roc_auc, handle multiclass properly
                     if self.metric in ("roc_auc", "auc") and y_pred_proba.shape[1] > 2: # Multiclass
-                        kwargs = {"multi_class": "ovr", "average": "weighted", "labels": getattr(model, 'classes_', np.unique(y_val))}
+                        kwargs = {
+                            "multi_class": "ovr", 
+                            "average": "weighted", 
+                            "labels": getattr(model, 'classes_', np.unique(y_val))
+                        }
                     elif self.metric in ("roc_auc", "auc"): # Binary
-                         y_pred_proba = y_pred_proba[:, 1]
-
-                    # For log_loss, ensure labels are passed if needed by sk_log_loss
+                        y_pred_proba = y_pred_proba[:, 1]
+    
+                    # For log_loss, ensure labels are passed if needed
                     if self.metric == "log_loss":
-                         kwargs["labels"] = getattr(model, 'classes_', np.unique(y_val))
+                        kwargs["labels"] = getattr(model, 'classes_', np.unique(y_val))
                     
                     return metric_fn(y_val, y_pred_proba, **kwargs)
                 else:
@@ -350,9 +361,18 @@ class BaselineModel:
                         f"Model {model.__class__.__name__} does not support predict_proba. "
                         f"Cannot use '{self.metric}'. Falling back to 'accuracy'."
                     )
-                    return accuracy_score(y_val, model.predict(X_val)) # Fallback
+                    y_pred = model.predict(X_val)
+                    return accuracy_score(y_val, y_pred) # Fallback
             else: # accuracy, f1, precision, recall
                 y_pred = model.predict(X_val)
+                
+                # Handle prediction format for models with string classes
+                if hasattr(self, 'label_encoder_') and self.label_encoder_ is not None:
+                    # Check if model outputs encoded or decoded predictions
+                    if hasattr(model, 'classes_') and not isinstance(model.classes_[0], (int, np.integer)):
+                        # Model produces string predictions, but we're comparing with encoded y_val
+                        y_pred = self.label_encoder_.transform(y_pred)
+                        
                 return metric_fn(y_val, y_pred)
         else:  # Regression
             y_pred = model.predict(X_val)
@@ -366,6 +386,15 @@ class BaselineModel:
         self.results = {} # Reset results for a new fit
         self.preprocessors_ = {} # Reset fitted preprocessors
         self._fitted_preprocessed_data_cache = {'train': {}, 'val': {}} # Cache for transformed data within this fit
+        
+        # Handle string class labels for classification tasks
+        self.label_encoder_ = None
+        if self.task_type == "classification" and not np.issubdtype(np.array(y).dtype, np.number):
+            logger.info("Target labels are non-numeric. Applying label encoding.")
+            from sklearn.preprocessing import LabelEncoder
+            self.label_encoder_ = LabelEncoder()
+            y = self.label_encoder_.fit_transform(y)
+        
         self.n_classes_ = len(np.unique(y)) if self.task_type == "classification" else None
 
         # Store original X for CatBoost if needed
