@@ -430,7 +430,17 @@ class BaselineModel:
             y = self.label_encoder_.fit_transform(y)
         
         self.n_classes_ = len(np.unique(y)) if self.task_type == "classification" else None
-
+        
+        if self.task_type == "classification" and self.n_classes_ > 2:
+            is_multiclass = True
+            if "XGBoost" in self.models_to_run:
+                self.models_to_run["XGBoost"] = XGBClassifier(
+                    random_state=self.random_state,
+                    eval_metric="mlogloss",  # Multi-class log loss
+                    objective="multi:softprob",  # Multi-class probability
+                    num_class=self.n_classes_  # Explicitly set number of classes
+                )
+    
         # Store original X for CatBoost if needed
         self.original_X_for_catboost = X.copy() if isinstance(X, pd.DataFrame) else None
         
