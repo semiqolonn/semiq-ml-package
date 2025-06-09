@@ -151,15 +151,30 @@ class BaselineModel:
     def _get_xgb_eval_metric(self):
         """Maps sklearn metrics to XGBoost eval_metric values"""
         if self.task_type == "classification":
-            metric_map = {
-                "accuracy": "error",  # (1-error) is accuracy
-                "log_loss": "logloss",
-                "roc_auc": "auc",
-                "f1_weighted": "logloss",  # No direct F1 in XGBoost
-                "precision_weighted": "logloss",  # No direct precision
-                "recall_weighted": "logloss",  # No direct recall
-            }
-            return metric_map.get(self.metric, "logloss")
+            # Check if we have a multi-class problem
+            is_multiclass = hasattr(self, 'n_classes_') and self.n_classes_ > 2
+            
+            if is_multiclass:
+                # Multi-class metrics
+                metric_map = {
+                    "accuracy": "merror",  # (1-merror) is accuracy for multiclass
+                    "log_loss": "mlogloss",
+                    "roc_auc": "mlogloss",  # No direct multiclass AUC in XGBoost
+                    "f1_weighted": "mlogloss",  # No direct F1 in XGBoost
+                    "precision_weighted": "mlogloss",  # No direct precision
+                    "recall_weighted": "mlogloss",  # No direct recall
+                }
+            else:
+                # Binary classification metrics
+                metric_map = {
+                    "accuracy": "error",  # (1-error) is accuracy
+                    "log_loss": "logloss",
+                    "roc_auc": "auc",
+                    "f1_weighted": "logloss",  # No direct F1 in XGBoost
+                    "precision_weighted": "logloss",  # No direct precision
+                    "recall_weighted": "logloss",  # No direct recall
+                }
+            return metric_map.get(self.metric, "mlogloss" if is_multiclass else "logloss")
         else:
             metric_map = {
                 "neg_root_mean_squared_error": "rmse",
