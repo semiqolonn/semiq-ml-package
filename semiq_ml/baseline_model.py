@@ -162,6 +162,46 @@ class BaselineModel:
             }
             return metric_map.get(self.metric, "rmse")
 
+    def _get_lgbm_metric(self):
+        """Maps sklearn metrics to LightGBM metric values"""
+        if self.task_type == "classification":
+            metric_map = {
+                "accuracy": "binary_error" if self.n_classes_ == 2 else "multi_error",
+                "log_loss": "binary_logloss" if self.n_classes_ == 2 else "multi_logloss",
+                "roc_auc": "auc",
+                "f1_weighted": "binary_logloss",  # No direct F1 in LGBM
+                "precision_weighted": "binary_logloss",  # No direct precision
+                "recall_weighted": "binary_logloss",  # No direct recall
+            }
+            return metric_map.get(self.metric, "binary_logloss" if self.n_classes_ == 2 else "multi_logloss")
+        else:
+            metric_map = {
+                "neg_root_mean_squared_error": "rmse",
+                "neg_mean_absolute_error": "mae",
+                "r2": "rmse",  # No direct r2 in LGBM
+            }
+            return metric_map.get(self.metric, "rmse")
+
+    def _get_catboost_loss(self):
+        """Maps sklearn metrics to CatBoost loss_function values"""
+        if self.task_type == "classification":
+            metric_map = {
+                "accuracy": "Logloss",  # No direct accuracy, but lower logloss = higher accuracy
+                "log_loss": "Logloss",
+                "roc_auc": "AUC",
+                "f1_weighted": "F1",
+                "precision_weighted": "Precision",
+                "recall_weighted": "Recall",
+            }
+            return metric_map.get(self.metric, "Logloss")
+        else:
+            metric_map = {
+                "neg_root_mean_squared_error": "RMSE",
+                "neg_mean_absolute_error": "MAE",
+                "r2": "RMSE",  # No direct R2
+            }
+            return metric_map.get(self.metric, "RMSE")
+
     def _get_model_type(self, model_name):
         """Determines the preprocessing strategy for a given model."""
         model_name_lower = model_name.lower()
@@ -231,9 +271,20 @@ class BaselineModel:
                 "KNN": KNeighborsClassifier(),
                 "Decision Tree": DecisionTreeClassifier(random_state=self.random_state),
                 "Random Forest": RandomForestClassifier(random_state=self.random_state),
-                "LGBM": LGBMClassifier(random_state=self.random_state, verbosity=-1),
-                "XGBoost": XGBClassifier(random_state=self.random_state, eval_metric=self._get_xgb_eval_metric()),
-                "CatBoost": CatBoostClassifier(random_state=self.random_state, silent=True),
+                "LGBM": LGBMClassifier(
+                    random_state=self.random_state, 
+                    verbosity=-1,
+                    metric=self._get_lgbm_metric() if hasattr(self, 'n_classes_') else None
+                ),
+                "XGBoost": XGBClassifier(
+                    random_state=self.random_state, 
+                    eval_metric=self._get_xgb_eval_metric()
+                ),
+                "CatBoost": CatBoostClassifier(
+                    random_state=self.random_state, 
+                    silent=True,
+                    loss_function=self._get_catboost_loss() if hasattr(self, 'n_classes_') else None
+                )
             }
         else:  # Regression
             all_models = {
@@ -242,9 +293,20 @@ class BaselineModel:
                 "KNN": KNeighborsRegressor(),
                 "Decision Tree": DecisionTreeRegressor(random_state=self.random_state),
                 "Random Forest": RandomForestRegressor(random_state=self.random_state),
-                "LGBM": LGBMRegressor(random_state=self.random_state, verbosity=-1),
-                "XGBoost": XGBRegressor(random_state=self.random_state, eval_metric=self._get_xgb_eval_metric()),
-                "CatBoost": CatBoostRegressor(random_state=self.random_state, silent=True),
+                "LGBM": LGBMClassifier(
+                    random_state=self.random_state, 
+                    verbosity=-1,
+                    metric=self._get_lgbm_metric() if hasattr(self, 'n_classes_') else None
+                ),
+                "XGBoost": XGBClassifier(
+                    random_state=self.random_state, 
+                    eval_metric=self._get_xgb_eval_metric()
+                ),
+                "CatBoost": CatBoostClassifier(
+                    random_state=self.random_state, 
+                    silent=True,
+                    loss_function=self._get_catboost_loss() if hasattr(self, 'n_classes_') else None
+                )
             }
         
         # Filter models based on the selected group
@@ -298,7 +360,9 @@ class BaselineModel:
         self.results = {} # Reset results for a new fit
         self.preprocessors_ = {} # Reset fitted preprocessors
         self._fitted_preprocessed_data_cache = {'train': {}, 'val': {}} # Cache for transformed data within this fit
+        self.n_classes_ = len(np.unique(y)) if self.task_type == "classification" else None
 
+        # Store original X for CatBoost if needed
         self.original_X_for_catboost = X.copy() if isinstance(X, pd.DataFrame) else None
         
         # Stratify for classification, not for regression
