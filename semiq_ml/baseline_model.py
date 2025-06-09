@@ -299,6 +299,9 @@ class BaselineModel:
         all_models = {}
         
         if self.task_type == "classification":
+            # Detect multi-class before initializing models
+            is_multiclass = hasattr(self, 'n_classes_') and self.n_classes_ > 2
+            
             all_models = {
                 "Logistic Regression": LogisticRegression(random_state=self.random_state, solver="liblinear", max_iter=1000),
                 "SVC": SVC(random_state=self.random_state, probability=True),
@@ -312,8 +315,8 @@ class BaselineModel:
                 ),
                 "XGBoost": XGBClassifier(
                     random_state=self.random_state,
-                    eval_metric=self._get_xgb_eval_metric(),
-                    objective=self._get_xgb_obj()  # Set the objective function
+                    eval_metric="mlogloss" if is_multiclass else "logloss",
+                    objective="multi:softprob" if is_multiclass else "binary:logistic"
                 ),
                 "CatBoost": CatBoostClassifier(
                     random_state=self.random_state, 
@@ -321,6 +324,7 @@ class BaselineModel:
                     loss_function=self._get_catboost_loss() if hasattr(self, 'n_classes_') else None
                 )
             }
+            # Rest of the method remains the same...
         else:  # Regression
             all_models = {
                 "Linear Regression": LinearRegression(),
