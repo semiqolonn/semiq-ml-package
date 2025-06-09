@@ -298,8 +298,7 @@ class BaselineModel:
                     metric=self._get_lgbm_metric() if hasattr(self, 'n_classes_') else None
                 ),
                 "XGBoost": XGBClassifier(
-                    random_state=self.random_state, 
-                    eval_metric=self._get_xgb_eval_metric()
+                    random_state=self.random_state,
                 ),
                 "CatBoost": CatBoostClassifier(
                     random_state=self.random_state, 
@@ -320,8 +319,7 @@ class BaselineModel:
                     metric=self._get_lgbm_metric() if hasattr(self, 'n_classes_') else None
                 ),
                 "XGBoost": XGBRegressor(  # Fixed: Changed from XGBClassifier
-                    random_state=self.random_state, 
-                    eval_metric=self._get_xgb_eval_metric()
+                    random_state=self.random_state,
                 ),
                 "CatBoost": CatBoostRegressor(  # Fixed: Changed from CatBoostClassifier
                     random_state=self.random_state, 
@@ -483,12 +481,17 @@ class BaselineModel:
                     self._fitted_preprocessed_data_cache['val'][preprocessor_key] = current_X_val
                     logger.info(f"Processed and cached data using '{preprocessor_key}' for model {name}")
 
-                # Common eval_set for other boosting models if X_val is available
-                if isinstance(model_instance, (LGBMClassifier, LGBMRegressor, XGBClassifier, XGBRegressor)):
+                if isinstance(model_instance, (XGBClassifier, XGBRegressor)):
+                    # Remove eval_metric from fit params - it should be set during initialization
+                    if "eval_metric" in model_specific_fit_params:
+                        del model_specific_fit_params["eval_metric"]
                     if "eval_set" not in model_specific_fit_params and current_X_val is not None:
                         model_specific_fit_params["eval_set"] = [(current_X_val, y_val)]
-                    if isinstance(model_instance, (XGBClassifier, XGBRegressor)) and "verbose" not in model_specific_fit_params:
+                    if "verbose" not in model_specific_fit_params:
                         model_specific_fit_params["verbose"] = False
+                elif isinstance(model_instance, (LGBMClassifier, LGBMRegressor)):
+                    if "eval_set" not in model_specific_fit_params and current_X_val is not None:
+                        model_specific_fit_params["eval_set"] = [(current_X_val, y_val)]
 
             if current_X_train is None:
                 logger.error(f"Training data for {name} is None. Skipping.")
