@@ -6,6 +6,8 @@ catboost_info/
 /dist/
 /ml-helper.wiki/
 /.pytest_cache/
+/build/
+/build/lib/
 
 .coverage
 .coverage.*
