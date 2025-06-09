@@ -77,9 +77,13 @@ class BaselineModel:
         self.best_score_ = -np.inf
         self.preprocessors_ = {}  # To store fitted preprocessors
         self.models_selection = models
-        self.models_to_run = self._initialize_models()
-    
+        
+        # Set the metric first so it's available during model initialization
         self._set_metric_and_direction(metric)
+        
+        # Now initialize models after the metric is set
+        self.models_to_run = self._initialize_models()
+
 
         self._metric_functions = {
             "accuracy": accuracy_score,
