@@ -148,6 +148,19 @@ class BaselineModel:
         else: # For regression metrics like MSE, MAE (if not negated), they would be minimized
             self.maximize_metric = False
 
+    def _get_xgb_obj(self):
+        """Returns the appropriate XGBoost objective function based on task type and class count"""
+        if self.task_type == "classification":
+            # Check if we have a multi-class problem
+            is_multiclass = hasattr(self, 'n_classes_') and self.n_classes_ > 2
+            
+            if is_multiclass:
+                return "multi:softprob"  # Multi-class classification with probability output
+            else:
+                return "binary:logistic"  # Binary classification
+        else:  # Regression
+            return "reg:squarederror"  # Standard regression
+
     def _get_xgb_eval_metric(self):
         """Maps sklearn metrics to XGBoost eval_metric values"""
         if self.task_type == "classification":
@@ -299,6 +312,8 @@ class BaselineModel:
                 ),
                 "XGBoost": XGBClassifier(
                     random_state=self.random_state,
+                    eval_metric=self._get_xgb_eval_metric(),
+                    objective=self._get_xgb_obj()  # Set the objective function
                 ),
                 "CatBoost": CatBoostClassifier(
                     random_state=self.random_state, 
@@ -318,8 +333,10 @@ class BaselineModel:
                     verbosity=-1,
                     metric=self._get_lgbm_metric() if hasattr(self, 'n_classes_') else None
                 ),
-                "XGBoost": XGBRegressor(  # Fixed: Changed from XGBClassifier
+                "XGBoost": XGBRegressor(
                     random_state=self.random_state,
+                    eval_metric=self._get_xgb_eval_metric(),
+                    objective=self._get_xgb_obj()  # Set the objective function
                 ),
                 "CatBoost": CatBoostRegressor(  # Fixed: Changed from CatBoostClassifier
                     random_state=self.random_state, 
@@ -481,17 +498,12 @@ class BaselineModel:
                     self._fitted_preprocessed_data_cache['val'][preprocessor_key] = current_X_val
                     logger.info(f"Processed and cached data using '{preprocessor_key}' for model {name}")
 
-                if isinstance(model_instance, (XGBClassifier, XGBRegressor)):
-                    # Remove eval_metric from fit params - it should be set during initialization
-                    if "eval_metric" in model_specific_fit_params:
-                        del model_specific_fit_params["eval_metric"]
+                # Common eval_set for other boosting models if X_val is available
+                if isinstance(model_instance, (LGBMClassifier, LGBMRegressor, XGBClassifier, XGBRegressor)):
                     if "eval_set" not in model_specific_fit_params and current_X_val is not None:
                         model_specific_fit_params["eval_set"] = [(current_X_val, y_val)]
-                    if "verbose" not in model_specific_fit_params:
+                    if isinstance(model_instance, (XGBClassifier, XGBRegressor)) and "verbose" not in model_specific_fit_params:
                         model_specific_fit_params["verbose"] = False
-                elif isinstance(model_instance, (LGBMClassifier, LGBMRegressor)):
-                    if "eval_set" not in model_specific_fit_params and current_X_val is not None:
-                        model_specific_fit_params["eval_set"] = [(current_X_val, y_val)]
 
             if current_X_train is None:
                 logger.error(f"Training data for {name} is None. Skipping.")
