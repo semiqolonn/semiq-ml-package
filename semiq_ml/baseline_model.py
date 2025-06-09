@@ -151,7 +151,9 @@ class BaselineModel:
                 "accuracy": "error",  # (1-error) is accuracy
                 "log_loss": "logloss",
                 "roc_auc": "auc",
-                # Add other mappings as needed
+                "f1_weighted": "logloss",  # No direct F1 in XGBoost
+                "precision_weighted": "logloss",  # No direct precision
+                "recall_weighted": "logloss",  # No direct recall
             }
             return metric_map.get(self.metric, "logloss")
         else:
