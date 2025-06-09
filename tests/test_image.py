@@ -135,3 +135,4 @@ class TestImageUtils:
             # Matplotlib might not be available in test environment
             # So we'll just verify it's not a code logic error
             assert "matplotlib" in str(e).lower() or "display" in str(e).lower()
+

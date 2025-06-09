@@ -330,3 +330,34 @@ def display_images(
 
     plt.tight_layout()
     plt.show()
+
+def sample_images(
+    images: Union[np.ndarray, List[np.ndarray]],
+    n_samples: int = 5,
+    random_seed: Optional[int] = None
+) -> List[np.ndarray]:
+    """
+    Randomly samples a specified number of images from a list or array of images.
+
+    Args:
+        images (Union[np.ndarray, List[np.ndarray]]): Array or list of images.
+        n_samples (int): Number of images to sample.
+        random_seed (Optional[int]): Seed for reproducibility.
+
+    Returns:
+        List[np.ndarray]: List of sampled images.
+    """
+    if random_seed is not None:
+        np.random.seed(random_seed)
+
+    if isinstance(images, np.ndarray):
+        if images.ndim == 4:  # Batch of images
+            indices = np.random.choice(images.shape[0], size=min(n_samples, images.shape[0]), replace=False)
+            return [images[i] for i in indices]
+        elif images.ndim == 3:  # Single image
+            return [images] * min(n_samples, 1)  # Return the single image multiple times
+    elif isinstance(images, list):
+        return np.random.choice(images, size=min(n_samples, len(images)), replace=False).tolist()
+    
+    return []  # If no valid input was provided
+

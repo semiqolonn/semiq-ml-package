@@ -52,10 +52,10 @@ class BaselineModel:
     with model-specific preprocessing considerations.
     """
 
-    def __init__(self, task_type="classification", metric=None, random_state=42):
+    def __init__(self, task_type="classification", metric=None, random_state=42, models="trees"):
         """
         Initializes the BaselineModel instance.
-
+    
         Args:
             task_type (str): 'classification' or 'regression'.
             metric (str, optional): The evaluation metric to optimize for.
@@ -63,17 +63,22 @@ class BaselineModel:
                                     For regression: 'neg_root_mean_squared_error', 'r2', 'neg_mean_absolute_error'.
                                     If None, defaults to 'accuracy' for classification and 'neg_root_mean_squared_error' for regression.
             random_state (int): Seed for reproducibility.
+            models (str): Which model set to use: 'all', 'trees' (includes Decision Tree, Random Forest, LGBM, XGBoost, CatBoost), 
+                          or 'gbm' (only gradient boosting models - LGBM, XGBoost, CatBoost). Default is 'trees'.
         """
         if task_type not in ["classification", "regression"]:
             raise ValueError("task_type must be 'classification' or 'regression'.")
+        if models not in ["all", "trees", "gbm"]:
+            raise ValueError("models must be one of: 'all', 'trees', 'gbm'.")
         self.task_type = task_type
         self.random_state = random_state
         self.results = {}
         self.best_model_ = None
         self.best_score_ = -np.inf
         self.preprocessors_ = {}  # To store fitted preprocessors
+        self.models_selection = models
         self.models_to_run = self._initialize_models()
-
+    
         self._set_metric_and_direction(metric)
 
         self._metric_functions = {
@@ -139,6 +144,23 @@ class BaselineModel:
         else: # For regression metrics like MSE, MAE (if not negated), they would be minimized
             self.maximize_metric = False
 
+    def _get_xgb_eval_metric(self):
+        """Maps sklearn metrics to XGBoost eval_metric values"""
+        if self.task_type == "classification":
+            metric_map = {
+                "accuracy": "error",  # (1-error) is accuracy
+                "log_loss": "logloss",
+                "roc_auc": "auc",
+                # Add other mappings as needed
+            }
+            return metric_map.get(self.metric, "logloss")
+        else:
+            metric_map = {
+                "neg_root_mean_squared_error": "rmse",
+                "neg_mean_absolute_error": "mae",
+                "r2": "rmse",  # No direct r2 in XGBoost
+            }
+            return metric_map.get(self.metric, "rmse")
 
     def _get_model_type(self, model_name):
         """Determines the preprocessing strategy for a given model."""
@@ -199,29 +221,41 @@ class BaselineModel:
 
 
     def _initialize_models(self):
-        """Initializes a dictionary of model instances."""
+        """Initializes a dictionary of model instances based on the selected model group."""
+        all_models = {}
+        
         if self.task_type == "classification":
-            return {
+            all_models = {
                 "Logistic Regression": LogisticRegression(random_state=self.random_state, solver="liblinear", max_iter=1000),
-                "SVC": SVC(random_state=self.random_state, probability=True), # Enable probability for all metrics
+                "SVC": SVC(random_state=self.random_state, probability=True),
                 "KNN": KNeighborsClassifier(),
                 "Decision Tree": DecisionTreeClassifier(random_state=self.random_state),
                 "Random Forest": RandomForestClassifier(random_state=self.random_state),
                 "LGBM": LGBMClassifier(random_state=self.random_state, verbosity=-1),
-                "XGBoost": XGBClassifier(random_state=self.random_state, eval_metric="logloss"),
+                "XGBoost": XGBClassifier(random_state=self.random_state, eval_metric=self._get_xgb_eval_metric()),
                 "CatBoost": CatBoostClassifier(random_state=self.random_state, silent=True),
             }
-        else: # Regression
-            return {
+        else:  # Regression
+            all_models = {
                 "Linear Regression": LinearRegression(),
                 "SVR": SVR(),
                 "KNN": KNeighborsRegressor(),
                 "Decision Tree": DecisionTreeRegressor(random_state=self.random_state),
                 "Random Forest": RandomForestRegressor(random_state=self.random_state),
-                "LGBM": LGBMRegressor(random_state=self.random_state, verbosity=-1), # verbosity for LGBMRegressor too
-                "XGBoost": XGBRegressor(random_state=self.random_state, eval_metric="rmse"),
+                "LGBM": LGBMRegressor(random_state=self.random_state, verbosity=-1),
+                "XGBoost": XGBRegressor(random_state=self.random_state, eval_metric=self._get_xgb_eval_metric()),
                 "CatBoost": CatBoostRegressor(random_state=self.random_state, silent=True),
             }
+        
+        # Filter models based on the selected group
+        if self.models_selection == "all":
+            return all_models
+        elif self.models_selection == "trees":
+            tree_models = ["Decision Tree", "Random Forest", "LGBM", "XGBoost", "CatBoost"]
+            return {name: model for name, model in all_models.items() if name in tree_models}
+        elif self.models_selection == "gbm":
+            gbm_models = ["LGBM", "XGBoost", "CatBoost"]
+            return {name: model for name, model in all_models.items() if name in gbm_models}
 
     def _evaluate_model_score(self, model, X_val, y_val):
         """Calculates the score for a given model and primary metric."""
