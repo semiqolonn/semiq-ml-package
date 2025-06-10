@@ -11,6 +11,6 @@ catboost_info/
 .vscode/
 semiq-ml.wiki/
 
-semiq-ml.wiki
+semiq-ml.wiki*
 .coverage
 .coverage.*
