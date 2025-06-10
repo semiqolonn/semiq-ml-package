@@ -27,6 +27,7 @@ dependencies = [
     "lightgbm",
     "xgboost",
     "catboost",
+    "optuna",
 ]
 
 [project.urls]

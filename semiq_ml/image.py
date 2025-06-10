@@ -1,16 +1,13 @@
-# semiq_ml/image.py
-
 import os
 import pandas as pd
 import numpy as np
-from PIL import Image, UnidentifiedImageError # Import UnidentifiedImageError for specific handling
+from PIL import Image, UnidentifiedImageError
 from typing import List, Tuple, Optional, Dict, Set, Any, Union
 from tqdm.auto import tqdm
 import matplotlib.pyplot as plt
 
 import logging
 logger = logging.getLogger(__name__)
-# Basic config if not already set by the user of the library
 if not logger.hasHandlers():
     logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s")
 
@@ -93,15 +90,14 @@ def path_to_dataframe_with_labels(
     data = []
     logger.info(f"Scanning folder: {folder_path} for images with labels...")
     for root, _, files in os.walk(folder_path):
-        # Ensure we are not using the top-level folder_path itself as a label if it contains images directly
         if os.path.samefile(root, folder_path): 
-            current_label = None # Or some placeholder like 'root_level_images'
+            current_label = None
         else:
             current_label = os.path.basename(root)
 
         for file in files:
             if os.path.splitext(file)[1].lower() in extensions:
-                if current_label is None: # Skip images directly in the root unless explicitly handled
+                if current_label is None:
                     logger.debug(f"Skipping image in root scan directory: {file}")
                     continue
 
@@ -157,20 +153,20 @@ def load_image_as_array(
     """
     try:
         img = Image.open(image_path)
-        if img.mode != mode: # Ensure target mode
+        if img.mode != mode:
             img = img.convert(mode)
 
         if size:
-            actual_resample_algo = resample_algo if resample_algo is not None else Image.Resampling.BILINEAR # Pillow default
+            actual_resample_algo = resample_algo if resample_algo is not None else Image.Resampling.BILINEAR
             img = img.resize(size, resample=actual_resample_algo)
 
         img_array = np.array(img)
 
         if normalize:
-            if img_array.dtype != np.float32: # Ensure float for division
+            if img_array.dtype != np.float32:
                 img_array = img_array.astype(np.float32)
             img_array /= 255.0
-        elif img_array.dtype != dtype: # Ensure target dtype if not normalizing
+        elif img_array.dtype != dtype:
             img_array = img_array.astype(dtype)
             
         return img_array
@@ -217,7 +213,7 @@ def load_images_from_dataframe(
     """
     images = []
     labels = []
-    has_labels = label_col is not None and label_col in df.columns  # Changed condition
+    has_labels = label_col is not None and label_col in df.columns
     
     iterable = df.iterrows()
     if show_progress:
@@ -234,11 +230,8 @@ def load_images_from_dataframe(
             images.append(img_array)
             if has_labels:
                 labels.append(row[label_col])
-        elif not skip_errors: # If we want to stop on error (currently img_array will be None and loop continues)
-            # This part would require raising an exception to halt.
-            # For simplicity, current behavior with `img_array is None` effectively skips.
+        elif not skip_errors:
             logger.error(f"Failed to load {path} and skip_errors is False. Halting (not truly implemented, just logged).")
-            # To truly halt: raise specific exception here.
 
     if not images:
         logger.warning("No images were successfully loaded from the DataFrame.")
@@ -276,14 +269,12 @@ def display_images(
         class_names (Optional[Dict[Any, str]]): Dictionary mapping label values to human-readable names.
     """
     if isinstance(images, tuple) and len(images) == 2:
-        # It's likely (images_array, labels_array) from load_images_from_dataframe
-        if labels is None:  # Only use tuple labels if none were explicitly provided
+        if labels is None:
             labels = images[1]
         images = images[0]
     
     if not isinstance(images, list):
-        # Handle single image or batch of images as np.ndarray
-        if images.ndim == 2 or (images.ndim == 3 and images.shape[-1] in [1, 3, 4]): # Single image
+        if images.ndim == 2 or (images.ndim == 3 and images.shape[-1] in [1, 3, 4]):
             images = [images]
    
     num_images = len(images)
@@ -302,11 +293,10 @@ def display_images(
         plt.subplot(n_rows, n_cols, i + 1)
         current_image = images[i]
         
-        # Handle grayscale images that might have a channel dimension of 1
         if current_image.ndim == 3 and current_image.shape[-1] == 1:
             plt.imshow(current_image.squeeze(), cmap='gray')
         else:
-            plt.imshow(current_image) # Works for (H,W) or (H,W,C)
+            plt.imshow(current_image)
 
         title_parts = []
         if labels is not None and i < len(labels):
@@ -351,13 +341,13 @@ def sample_images(
         np.random.seed(random_seed)
 
     if isinstance(images, np.ndarray):
-        if images.ndim == 4:  # Batch of images
+        if images.ndim == 4:
             indices = np.random.choice(images.shape[0], size=min(n_samples, images.shape[0]), replace=False)
             return [images[i] for i in indices]
-        elif images.ndim == 3:  # Single image
-            return [images] * min(n_samples, 1)  # Return the single image multiple times
+        elif images.ndim == 3:
+            return [images] * min(n_samples, 1)
     elif isinstance(images, list):
         return np.random.choice(images, size=min(n_samples, len(images)), replace=False).tolist()
     
-    return []  # If no valid input was provided
+    return []
 

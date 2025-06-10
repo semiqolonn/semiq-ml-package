@@ -3,13 +3,14 @@ import numpy as np
 import pandas as pd
 import pytest
 from unittest.mock import patch, MagicMock
+from typing import Tuple, Dict, Any, List, Optional, Union, cast
 
 from semiq_ml.baseline_model import BaselineModel
 
 # --- Fixtures ---
 
 @pytest.fixture
-def classification_data():
+def classification_data() -> Tuple[pd.DataFrame, np.ndarray]:
     """Generate a simple classification dataset."""
     # Features: 2 numerical, 2 categorical
     X = pd.DataFrame({
@@ -23,7 +24,7 @@ def classification_data():
     return X, y
 
 @pytest.fixture
-def regression_data():
+def regression_data() -> Tuple[pd.DataFrame, np.ndarray]:
     """Generate a simple regression dataset."""
     # Features: 2 numerical, 2 categorical
     X = pd.DataFrame({
@@ -37,45 +38,45 @@ def regression_data():
     return X, y
 
 @pytest.fixture
-def classification_model():
+def classification_model() -> BaselineModel:
     """Create a BaselineModel instance for classification."""
     return BaselineModel(task_type='classification', models='gbm')
 
 @pytest.fixture
-def regression_model():
+def regression_model() -> BaselineModel:
     """Create a BaselineModel instance for regression."""
     return BaselineModel(task_type='regression', models='gbm')
 
 # --- Tests for BaselineModel initialization ---
 
-def test_baseline_model_init_classification():
+def test_baseline_model_init_classification() -> None:
     """Test initialization of BaselineModel for classification."""
     model = BaselineModel(task_type='classification', metric='accuracy')
     assert model.task_type == 'classification'
     assert model.metric == 'accuracy'
 
-def test_baseline_model_init_regression():
+def test_baseline_model_init_regression() -> None:
     """Test initialization of BaselineModel for regression."""
     model = BaselineModel(task_type='regression', metric='r2')
     assert model.task_type == 'regression'
     assert model.metric == 'r2'
 
-def test_baseline_model_init_invalid_task():
+def test_baseline_model_init_invalid_task() -> None:
     """Test initialization with invalid task type."""
     with pytest.raises(ValueError):
         BaselineModel(task_type='invalid_task')
 
-def test_baseline_model_init_invalid_models():
+def test_baseline_model_init_invalid_models() -> None:
     """Test initialization with invalid models parameter."""
     with pytest.raises(ValueError):
         BaselineModel(models='invalid_models')
 
-def test_baseline_model_init_invalid_metric():
+def test_baseline_model_init_invalid_metric() -> None:
     """Test initialization with invalid metric."""
     with pytest.raises(ValueError):
         BaselineModel(task_type='classification', metric='invalid_metric')
 
-def test_baseline_model_models_gbm():
+def test_baseline_model_models_gbm() -> None:
     """Test initialization with 'gbm' models set."""
     model = BaselineModel(models='gbm')
     model._initialize_models()  # Make sure models are initialized
@@ -83,7 +84,7 @@ def test_baseline_model_models_gbm():
     assert len(model_names) <= 5  # Fewer models than 'all'
     assert any(name for name in model_names if 'XGBoost' in name or 'LGBM' in name or 'CatBoost' in name)
 
-def test_baseline_model_models_trees():
+def test_baseline_model_models_trees() -> None:
     """Test initialization with 'trees' models set."""
     model = BaselineModel(models='trees')
     model._initialize_models()  # Make sure models are initialized
@@ -91,7 +92,7 @@ def test_baseline_model_models_trees():
     assert any(name for name in model_names if 'Random Forest' in name)
     assert any(name for name in model_names if 'Decision Tree' in name)
 
-def test_baseline_model_models_all():
+def test_baseline_model_models_all() -> None:
     """Test initialization with 'all' models set."""
     model = BaselineModel(models='all')
     model._initialize_models()  # Make sure models are initialized
@@ -100,7 +101,7 @@ def test_baseline_model_models_all():
 
 # --- Tests for model fitting and evaluation ---
 
-def test_fit_classification(classification_data):
+def test_fit_classification(classification_data: Tuple[pd.DataFrame, np.ndarray]) -> None:
     """Test fit method with classification data."""
     X, y = classification_data
     model = BaselineModel(task_type='classification', models='gbm')
@@ -118,7 +119,7 @@ def test_fit_classification(classification_data):
         assert 'model' in model_info
         assert 'preprocessor' in model_info
 
-def test_fit_regression(regression_data):
+def test_fit_regression(regression_data: Tuple[pd.DataFrame, np.ndarray]) -> None:
     """Test fit method with regression data."""
     X, y = regression_data
     model = BaselineModel(task_type='regression', models='gbm')
@@ -128,7 +129,7 @@ def test_fit_regression(regression_data):
     assert isinstance(results, dict)
     assert len(results) > 0
 
-def test_get_model(classification_data):
+def test_get_model(classification_data: Tuple[pd.DataFrame, np.ndarray]) -> None:
     """Test get_model method."""
     X, y = classification_data
     model = BaselineModel(task_type='classification', models='gbm')
@@ -143,7 +144,7 @@ def test_get_model(classification_data):
     with pytest.raises(ValueError):
         model.get_model('non_existent_model')
 
-def test_evaluate_all(classification_data):
+def test_evaluate_all(classification_data: Tuple[pd.DataFrame, np.ndarray]) -> None:
     """Test evaluate_all method."""
     X, y = classification_data
     model = BaselineModel(task_type='classification', models='gbm')
@@ -158,7 +159,7 @@ def test_evaluate_all(classification_data):
     for model_name, score in eval_results.items():
         assert isinstance(score, (float, int))
 
-def test_get_results(classification_data):
+def test_get_results(classification_data: Tuple[pd.DataFrame, np.ndarray]) -> None:
     """Test get_results method."""
     X, y = classification_data
     model = BaselineModel(task_type='classification', models='gbm')
@@ -173,7 +174,7 @@ def test_get_results(classification_data):
 
 # --- Tests for visualization methods ---
 
-def test_roc_curves(classification_data, monkeypatch):
+def test_roc_curves(classification_data: Tuple[pd.DataFrame, np.ndarray], monkeypatch: pytest.MonkeyPatch) -> None:
     """Test roc_curves method."""
     # Mock plt.figure and plt.show to avoid actual plotting
     mock_plot = MagicMock()
@@ -196,7 +197,7 @@ def test_roc_curves(classification_data, monkeypatch):
     # Assert plot was called at least once
     assert mock_plot.called
 
-def test_precision_recall_curves(classification_data, monkeypatch):
+def test_precision_recall_curves(classification_data: Tuple[pd.DataFrame, np.ndarray], monkeypatch: pytest.MonkeyPatch) -> None:
     """Test precision_recall_curves method."""
     # Mock plt functions
     mock_plot = MagicMock()

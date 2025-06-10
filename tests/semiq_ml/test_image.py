@@ -5,6 +5,7 @@ import numpy as np
 from PIL import Image, UnidentifiedImageError
 import pytest
 from unittest.mock import patch, MagicMock, mock_open
+from typing import Tuple, Dict, Any, List, Optional, Union, cast, Set
 
 from semiq_ml.image import (
     path_to_dataframe,
@@ -18,7 +19,7 @@ from semiq_ml.image import (
 # --- Fixtures ---
 
 @pytest.fixture
-def sample_image_path(tmp_path):
+def sample_image_path(tmp_path: pytest.TempPathFactory) -> str:
     """Create a sample image for testing."""
     img_path = tmp_path / "test_img.jpg"
     # Create a small RGB test image
@@ -27,7 +28,7 @@ def sample_image_path(tmp_path):
     return str(img_path)
 
 @pytest.fixture
-def sample_image_paths(tmp_path):
+def sample_image_paths(tmp_path: pytest.TempPathFactory) -> Tuple[str, List[str]]:
     """Create a directory with sample images for testing."""
     # Create a structure like:
     # tmp_path/
@@ -44,7 +45,7 @@ def sample_image_paths(tmp_path):
     class2_dir.mkdir()
     
     # Create 2 images per class
-    paths = []
+    paths: List[str] = []
     for cls_dir in [class1_dir, class2_dir]:
         cls_name = cls_dir.name
         for i in range(2):
@@ -53,10 +54,10 @@ def sample_image_paths(tmp_path):
             img.save(img_path)
             paths.append(str(img_path))
     
-    return tmp_path, paths
+    return str(tmp_path), paths
 
 @pytest.fixture
-def sample_dataframe():
+def sample_dataframe() -> pd.DataFrame:
     """Create a sample DataFrame with image paths."""
     return pd.DataFrame({
         'path': [
@@ -69,7 +70,7 @@ def sample_dataframe():
 
 # --- Tests for path_to_dataframe ---
 
-def test_path_to_dataframe(sample_image_paths):
+def test_path_to_dataframe(sample_image_paths: Tuple[str, List[str]]) -> None:
     """Test path_to_dataframe function."""
     folder_path, _ = sample_image_paths
     
@@ -86,13 +87,13 @@ def test_path_to_dataframe(sample_image_paths):
     assert df_meta['height'].iloc[0] == 10
     assert df_meta['img_mode'].iloc[0] == 'RGB'
 
-def test_path_to_dataframe_nonexistent_folder():
+def test_path_to_dataframe_nonexistent_folder() -> None:
     """Test path_to_dataframe with non-existent folder."""
     df = path_to_dataframe('/nonexistent/folder')
     assert len(df) == 0
     assert set(df.columns) == {'path', 'name'}
 
-def test_path_to_dataframe_with_filter():
+def test_path_to_dataframe_with_filter() -> None:
     """Test path_to_dataframe with extension filter."""
     with patch('os.walk') as mock_walk, \
          patch('os.path.isdir', return_value=True):  # Mock isdir to return True
@@ -112,7 +113,7 @@ def test_path_to_dataframe_with_filter():
 
 # --- Tests for path_to_dataframe_with_labels ---
 
-def test_path_to_dataframe_with_labels(sample_image_paths):
+def test_path_to_dataframe_with_labels(sample_image_paths: Tuple[str, List[str]]) -> None:
     """Test path_to_dataframe_with_labels function."""
     folder_path, _ = sample_image_paths
     
@@ -127,7 +128,7 @@ def test_path_to_dataframe_with_labels(sample_image_paths):
     assert len(class1_paths) == 2
     assert len(class2_paths) == 2
 
-def test_path_to_dataframe_with_labels_nonexistent_folder():
+def test_path_to_dataframe_with_labels_nonexistent_folder() -> None:
     """Test path_to_dataframe_with_labels with non-existent folder."""
     df = path_to_dataframe_with_labels('/nonexistent/folder')
     assert len(df) == 0
@@ -135,7 +136,7 @@ def test_path_to_dataframe_with_labels_nonexistent_folder():
 
 # --- Tests for load_image_as_array ---
 
-def test_load_image_as_array(sample_image_path):
+def test_load_image_as_array(sample_image_path: str) -> None:
     """Test load_image_as_array function."""
     # Test loading with default settings
     img_array = load_image_as_array(sample_image_path)
@@ -156,7 +157,7 @@ def test_load_image_as_array(sample_image_path):
     img_array = load_image_as_array(sample_image_path, mode='L')
     assert img_array.shape == (10, 10)  # Grayscale image has no channel dimension
 
-def test_load_image_as_array_errors():
+def test_load_image_as_array_errors() -> None:
     """Test load_image_as_array error handling."""
     # Test file not found
     result = load_image_as_array('/nonexistent/image.jpg')
@@ -176,7 +177,7 @@ def test_load_image_as_array_errors():
 
 # --- Tests for load_images_from_dataframe ---
 
-def test_load_images_from_dataframe():
+def test_load_images_from_dataframe() -> None:
     """Test load_images_from_dataframe function."""
     # Create a mock DataFrame and mock the load_image_as_array function
     df = pd.DataFrame({
@@ -191,7 +192,7 @@ def test_load_images_from_dataframe():
         'img3.jpg': np.ones((10, 10, 3), dtype=np.uint8) * 2
     }
     
-    def mock_load_image(path, **kwargs):
+    def mock_load_image(path: str, **kwargs) -> Optional[np.ndarray]:
         return mock_arrays.get(path)
     
     with patch('semiq_ml.image.load_image_as_array', side_effect=mock_load_image):
@@ -207,7 +208,7 @@ def test_load_images_from_dataframe():
         assert images.shape == (3, 10, 10, 3)
         assert labels.tolist() == [0, 1, 2]
 
-def test_load_images_from_dataframe_with_errors():
+def test_load_images_from_dataframe_with_errors() -> None:
     """Test load_images_from_dataframe with errors."""
     df = pd.DataFrame({
         'path': ['img1.jpg', 'img2.jpg', 'img3.jpg'],
@@ -215,7 +216,7 @@ def test_load_images_from_dataframe_with_errors():
     })
     
     # Mock load_image_as_array to simulate some failures
-    def mock_load_image(path, **kwargs):
+    def mock_load_image(path: str, **kwargs) -> Optional[np.ndarray]:
         if path == 'img2.jpg':
             return None  # Simulate failure
         shape = (10, 10, 3)
@@ -233,7 +234,7 @@ def test_load_images_from_dataframe_with_errors():
         assert len(labels) == 2
         assert 1 not in labels  # Label 1 corresponds to img2.jpg which failed
 
-def test_load_images_from_dataframe_empty_result():
+def test_load_images_from_dataframe_empty_result() -> None:
     """Test load_images_from_dataframe with all images failing to load."""
     df = pd.DataFrame({
         'path': ['img1.jpg', 'img2.jpg'],
@@ -253,7 +254,7 @@ def test_load_images_from_dataframe_empty_result():
 
 # --- Tests for display_images ---
 
-def test_display_images(monkeypatch):
+def test_display_images(monkeypatch: pytest.MonkeyPatch) -> None:
     """Test display_images function."""
     # Mock matplotlib functions to avoid actual plotting
     mock_show = MagicMock()
@@ -312,7 +313,7 @@ def test_display_images(monkeypatch):
 
 # --- Tests for sample_images ---
 
-def test_sample_images():
+def test_sample_images() -> None:
     """Test sample_images function."""
     # Create a batch of images
     imgs = np.stack([

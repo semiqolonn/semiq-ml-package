@@ -3,6 +3,7 @@ import numpy as np
 import time
 import logging
 import matplotlib.pyplot as plt
+from typing import Dict, List, Tuple, Optional, Union, Any, Callable, Literal, TypeVar, cast
 
 from sklearn.preprocessing import OneHotEncoder, StandardScaler, OrdinalEncoder
 from sklearn.compose import ColumnTransformer
@@ -51,19 +52,23 @@ class BaselineModel:
     with model-specific preprocessing considerations.
     """
 
-    def __init__(self, task_type="classification", metric=None, random_state=42, models="trees"):
+    def __init__(self, 
+                 task_type: Literal["classification", "regression"] = "classification",
+                 metric: Optional[str] = None, 
+                 random_state: int = 42, 
+                 models: Literal["all", "trees", "gbm"] = "trees"):
         """
         Initializes the BaselineModel instance.
     
         Args:
-            task_type (str): 'classification' or 'regression'.
-            metric (str, optional): The evaluation metric to optimize for.
-                                    For classification: 'accuracy', 'f1_weighted', 'roc_auc', 'precision_weighted', 'recall_weighted', 'log_loss'.
-                                    For regression: 'neg_root_mean_squared_error', 'r2', 'neg_mean_absolute_error'.
-                                    If None, defaults to 'accuracy' for classification and 'neg_root_mean_squared_error' for regression.
-            random_state (int): Seed for reproducibility.
-            models (str): Which model set to use: 'all', 'trees' (includes Decision Tree, Random Forest, LGBM, XGBoost, CatBoost), 
-                          or 'gbm' (only gradient boosting models - LGBM, XGBoost, CatBoost). Default is 'trees'.
+            task_type: 'classification' or 'regression'.
+            metric: The evaluation metric to optimize for.
+                    For classification: 'accuracy', 'f1_weighted', 'roc_auc', 'precision_weighted', 'recall_weighted', 'log_loss'.
+                    For regression: 'neg_root_mean_squared_error', 'r2', 'neg_mean_absolute_error'.
+                    If None, defaults to 'accuracy' for classification and 'neg_root_mean_squared_error' for regression.
+            random_state: Seed for reproducibility.
+            models: Which model set to use: 'all', 'trees' (includes Decision Tree, Random Forest, LGBM, XGBoost, CatBoost), 
+                   or 'gbm' (only gradient boosting models - LGBM, XGBoost, CatBoost). Default is 'trees'.
         """
         if task_type not in ["classification", "regression"]:
             raise ValueError("task_type must be 'classification' or 'regression'.")
@@ -118,14 +123,14 @@ class BaselineModel:
             ),
         }
 
-    def _set_metric_and_direction(self, metric):
+    def _set_metric_and_direction(self, metric: Optional[str]) -> None:
         """Set the metric and determine if it should be maximized or minimized"""
-        self.maximize_metric = True
-        default_metrics = {
+        self.maximize_metric: bool = True
+        default_metrics: Dict[str, str] = {
             "classification": "accuracy",
             "regression": "neg_root_mean_squared_error"
         }
-        valid_metrics = {
+        valid_metrics: Dict[str, List[str]] = {
             "classification": ["accuracy", "f1_weighted", "roc_auc", "auc", "precision_weighted", "recall_weighted", "log_loss"],
             "regression": ["neg_root_mean_squared_error", "r2", "neg_mean_absolute_error"]
         }
@@ -147,9 +152,9 @@ class BaselineModel:
         else:
             self.maximize_metric = False
 
-    def _get_boosting_params(self):
+    def _get_boosting_params(self) -> Dict[str, Dict[str, Any]]:
         """Gets appropriate parameters for boosting models based on task type and class count"""
-        is_multiclass = hasattr(self, 'n_classes_') and self.n_classes_ > 2
+        is_multiclass: bool = hasattr(self, 'n_classes_') and self.n_classes_ > 2
         
         if self.task_type == "classification":
             return {
@@ -198,9 +203,9 @@ class BaselineModel:
                 }
             }
 
-    def _get_model_type(self, model_name):
+    def _get_model_type(self, model_name: str) -> Literal['distance_kernel', 'catboost_internal', 'general_ohe']:
         """Determines the preprocessing strategy for a given model."""
-        model_name_lower = model_name.lower()
+        model_name_lower: str = model_name.lower()
         if "knn" in model_name_lower or "svc" in model_name_lower or "svr" in model_name_lower:
             return 'distance_kernel'
         elif "catboost" in model_name_lower:
@@ -208,7 +213,9 @@ class BaselineModel:
         else:
             return 'general_ohe'
 
-    def _build_preprocessor(self, X_ref_for_dtypes, preprocessor_type):
+    def _build_preprocessor(self, 
+                          X_ref_for_dtypes: Union[pd.DataFrame, np.ndarray], 
+                          preprocessor_type: Literal['general_ohe', 'distance_kernel', 'catboost_internal']) -> Optional[Union[Pipeline, ColumnTransformer]]:
         """Builds a preprocessor based on the required type and data types of X_ref."""
         if not isinstance(X_ref_for_dtypes, pd.DataFrame):
             logger.warning("X_ref_for_dtypes is not a DataFrame. Cannot infer column types for preprocessor. Assuming all numeric.")
@@ -254,10 +261,10 @@ class BaselineModel:
 
         return ColumnTransformer(transformers, remainder='drop')
 
-    def _initialize_models(self):
+    def _initialize_models(self) -> Dict[str, Any]:
         """Initializes models based on the selected model group."""
-        boosting_params = self._get_boosting_params()
-        is_multiclass = hasattr(self, 'n_classes_') and self.n_classes_ > 2
+        boosting_params: Dict[str, Dict[str, Any]] = self._get_boosting_params()
+        is_multiclass: bool = hasattr(self, 'n_classes_') and self.n_classes_ > 2
         
         if self.task_type == "classification":
             all_models = {
@@ -317,9 +324,9 @@ class BaselineModel:
             gbm_models = ["LGBM", "XGBoost", "CatBoost"]
             return {name: model for name, model in all_models.items() if name in gbm_models}
 
-    def _evaluate_model_score(self, model, X_val, y_val):
+    def _evaluate_model_score(self, model: Any, X_val: Union[pd.DataFrame, np.ndarray], y_val: Union[pd.Series, np.ndarray]) -> float:
         """Calculates the score for a given model and primary metric."""
-        metric_fn = self._metric_functions[self.metric]
+        metric_fn: Callable = self._metric_functions[self.metric]
         
         # Handle label encoding if needed
         original_y_val = y_val
@@ -367,9 +374,12 @@ class BaselineModel:
             y_pred = model.predict(X_val)
             return metric_fn(y_val, y_pred)
 
-    def _preprocess_for_model(self, model_name, X_train_raw, X_val_raw=None):
+    def _preprocess_for_model(self, 
+                         model_name: str, 
+                         X_train_raw: Union[pd.DataFrame, np.ndarray], 
+                         X_val_raw: Optional[Union[pd.DataFrame, np.ndarray]] = None) -> Tuple[np.ndarray, Optional[np.ndarray], str]:
         """Preprocesses data for a specific model type"""
-        preprocessor_key = self._get_model_type(model_name)
+        preprocessor_key: str = self._get_model_type(model_name)
         
         if preprocessor_key == 'catboost_internal':
             return X_train_raw, X_val_raw, preprocessor_key
@@ -391,7 +401,12 @@ class BaselineModel:
         
         return X_train, X_val, preprocessor_key
 
-    def fit(self, X, y, validation_size=0.2, random_state=None, **kwargs):
+    def fit(self, 
+           X: Union[pd.DataFrame, np.ndarray], 
+           y: Union[pd.Series, np.ndarray], 
+           validation_size: float = 0.2, 
+           random_state: Optional[int] = None, 
+           **kwargs: Any) -> Dict[str, Dict[str, Any]]:
         """
         Fit the model(s) to the data.
         
@@ -571,7 +586,9 @@ class BaselineModel:
         logger.info(f"BaselineModel run complete. Best model: {self.best_model_.__class__.__name__} with {self.metric}: {self.best_score_:.4f}")
         return self.results  # Return the results dictionary
 
-    def _generate_evaluation_dataframe(self, X, y):
+    def _generate_evaluation_dataframe(self, 
+                              X: Union[pd.DataFrame, np.ndarray], 
+                              y: Union[pd.Series, np.ndarray]) -> pd.DataFrame:
         """
         Generate a DataFrame with evaluation metrics for all models.
     
@@ -665,7 +682,9 @@ class BaselineModel:
         
         return pd.DataFrame(eval_data)
 
-    def evaluate_all(self, X, y):
+    def evaluate_all(self, 
+                 X: Union[pd.DataFrame, np.ndarray], 
+                 y: Union[pd.Series, np.ndarray]) -> Dict[str, float]:
         """
         Evaluate all fitted models on new data.
         
@@ -708,7 +727,7 @@ class BaselineModel:
     
         return eval_dict
 
-    def get_model(self, model_name):
+    def get_model(self, model_name: str) -> Any:
         """
         Get a specific model by name.
         
@@ -739,7 +758,7 @@ class BaselineModel:
             
         return model
         
-    def get_results(self):
+    def get_results(self) -> pd.DataFrame:
         """
         Get results of model fitting as a DataFrame.
         
@@ -768,7 +787,9 @@ class BaselineModel:
         # Create and return DataFrame
         return pd.DataFrame(data)
         
-    def _get_processed_data_for_eval(self, X, model_name):
+    def _get_processed_data_for_eval(self, 
+                             X: Union[pd.DataFrame, np.ndarray], 
+                             model_name: str) -> Union[pd.DataFrame, np.ndarray]:
         """
         Process input data using the appropriate preprocessor for a specific model.
         
@@ -801,7 +822,10 @@ class BaselineModel:
         # No preprocessing needed or preprocessor not available
         return X.to_numpy() if isinstance(X, pd.DataFrame) else X
 
-    def _plot_curves(self, X, y, curve_type="roc"):
+    def _plot_curves(self, 
+                 X: Union[pd.DataFrame, np.ndarray], 
+                 y: Union[pd.Series, np.ndarray], 
+                 curve_type: Literal["roc", "precision_recall"] = "roc") -> None:
         """Helper function to plot ROC or Precision-Recall curves."""
         if self.task_type != "classification":
             raise ValueError(f"{curve_type.upper()} curves only for classification tasks.")
@@ -851,19 +875,19 @@ class BaselineModel:
         plt.grid(True)
         plt.show()
 
-    def roc_curves(self, X, y):
+    def roc_curves(self, X: Union[pd.DataFrame, np.ndarray], y: Union[pd.Series, np.ndarray]) -> None:
         """Plots ROC curves for classification models."""
         self._plot_curves(X, y, curve_type="roc")
 
-    def precision_recall_curves(self, X, y):
+    def precision_recall_curves(self, X: Union[pd.DataFrame, np.ndarray], y: Union[pd.Series, np.ndarray]) -> None:
         """Plots Precision-Recall curves for classification models."""
         self._plot_curves(X, y, curve_type="precision_recall")
 
 
-class Timeseries():
+class Timeseries:
     """
     Placeholder for a future class to handle timeseries-specific baseline models.
     Currently, this class does not implement any functionality.
     """
-    def __init__(self):
+    def __init__(self) -> None:
         raise NotImplementedError("TimeseriesBaseline is not yet implemented.")
