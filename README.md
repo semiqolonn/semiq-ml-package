@@ -1,6 +1,6 @@
 # semiq-ml - Machine Learning Workflow Simplifier
 
-Welcome to the semiq-ml documentation. This package provides helper functions and classes to simplify common machine learning workflows, including baseline model training, evaluation, and hyperparameter tuning.
+Welcome to the semiq-ml documentation. This package provides helper functions and classes to simplify common machine learning workflows, including baseline model training, evaluation, hyperparameter tuning, and image processing.
 
 ## Overview
 
@@ -12,6 +12,7 @@ semiq-ml is designed to:
 - Support both classification and regression tasks
 - Handle categorical features correctly, especially for tree-based models
 - Offer flexible model selection with 'all', 'trees', or 'gbm' options
+- Simplify image dataset preparation for computer vision tasks
 
 ## Key Components
 
@@ -35,6 +36,17 @@ The `OptunaOptimizer` class enhances the BaselineModel by adding:
 - Detailed tuning results and best parameter reporting
 - Visualization of optimization history and parameter importance
 - Flexible control over trials and cross-validation
+
+### Image Module
+
+The `image` module provides utilities for working with image datasets:
+
+- Easy scanning of directory structures to create image DataFrames
+- Automatic label inference from directory hierarchies
+- Convenient image loading with resizing, normalization and format conversion
+- Batch image loading from DataFrames with detailed control over transformations
+- Image visualization tools for single images or batches, with optional label and prediction display
+- Image sampling utilities for exploring large datasets
 
 ## Getting Started
 
@@ -87,6 +99,34 @@ tuning_results = tuner.get_tuning_results()
 print(tuning_results)
 ```
 
+### Image Processing Example
+
+```python
+# Import the image module
+import semiq_ml.image as img_utils
+import matplotlib.pyplot as plt
+
+# Create a DataFrame from a directory of images (e.g., for classification)
+# Assumes a folder structure like: dataset/class_name/image.jpg
+image_df = img_utils.path_to_dataframe_with_labels('path/to/dataset')
+print(f"Found {len(image_df)} images with labels: {image_df['label'].unique()}")
+
+# Load images with preprocessing
+images, labels = img_utils.load_images_from_dataframe(
+    image_df,
+    size=(224, 224),  # Resize all images to 224x224
+    normalize=True,   # Normalize pixel values to [0,1]
+    show_progress=True
+)
+
+# Display a sample of images with labels
+img_utils.display_images(
+    images[:5], 
+    labels=labels[:5],
+    n_cols=5
+)
+```
+
 For more examples and advanced usage, see the [Basic Usage Examples](https://github.com/semiqolonn/semiq-ml/wiki/BasicUsage) guide.
 
 ## Support
@@ -105,7 +145,7 @@ We welcome contributions to semiq-ml! Here's how you can help:
 2. **Documentation**: Help improve or translate documentation.
 3. **Bug Reports**: Report bugs or suggest features via the issue tracker.
 
-Please review our [Contributing Guidelines](https://github.com/semiqolonn/ml-helper/wiki/Contributing) for more details on code style, testing requirements, and the pull request process.
+Please review our [Contributing Guidelines](https://github.com/semiqolonn/semiq-ml/wiki/Contributing) for more details on code style, testing requirements, and the pull request process.
 
 ## License
 
