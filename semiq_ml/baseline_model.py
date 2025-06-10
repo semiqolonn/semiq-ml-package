@@ -679,7 +679,7 @@ class BaselineModel:
         Returns
         -------
         dict
-            Dictionary with evaluation results for each model
+            Dictionary with model names as keys and their primary metric scores as values
         """
         if not hasattr(self, 'results') or not self.results:
             raise ValueError("No fitted models available. Call fit() first.")
@@ -687,16 +687,58 @@ class BaselineModel:
         # Generate evaluation DataFrame
         eval_df = self._generate_evaluation_dataframe(X, y)
     
-        # Convert DataFrame to dictionary
+        # Convert DataFrame to dictionary, using only the primary metric as the score
         eval_dict = {}
         for _, row in eval_df.iterrows():
             model_name = row['model']
-            eval_dict[model_name] = {
-                col: row[col] for col in eval_df.columns if col != 'model'
-            }
+            # Use the metric that the model was trained to optimize
+            if self.metric in row and row[self.metric] is not None:
+                eval_dict[model_name] = row[self.metric]
+            # Fallback to accuracy for classification or r2 for regression
+            elif self.task_type == 'classification' and 'accuracy' in row:
+                eval_dict[model_name] = row['accuracy']
+            elif self.task_type == 'regression' and 'r2' in row:
+                eval_dict[model_name] = row['r2']
+            # Last resort: use the first available metric
+            else:
+                for col in eval_df.columns:
+                    if col != 'model' and row[col] is not None:
+                        eval_dict[model_name] = row[col]
+                        break
     
         return eval_dict
 
+    def get_model(self, model_name):
+        """
+        Get a specific model by name.
+        
+        Parameters
+        ----------
+        model_name : str
+            The name of the model to retrieve
+            
+        Returns
+        -------
+        object
+            The fitted model instance
+            
+        Raises
+        ------
+        ValueError
+            If the model is not found or not successfully trained
+        """
+        if not hasattr(self, 'results') or not self.results:
+            raise ValueError("No fitted models available. Call fit() first.")
+            
+        if model_name not in self.results:
+            raise ValueError(f"Model '{model_name}' not found. Available models: {list(self.results.keys())}")
+            
+        model = self.results[model_name].get('model')
+        if model is None:
+            raise ValueError(f"Model '{model_name}' failed to train successfully.")
+            
+        return model
+        
     def get_results(self):
         """
         Get results of model fitting as a DataFrame.
@@ -725,6 +767,39 @@ class BaselineModel:
     
         # Create and return DataFrame
         return pd.DataFrame(data)
+        
+    def _get_processed_data_for_eval(self, X, model_name):
+        """
+        Process input data using the appropriate preprocessor for a specific model.
+        
+        Parameters
+        ----------
+        X : pandas.DataFrame or numpy.ndarray
+            Features to preprocess
+        model_name : str
+            Name of the model for which to preprocess the data
+            
+        Returns
+        -------
+        numpy.ndarray
+            Preprocessed features
+        """
+        if model_name not in self.results:
+            raise ValueError(f"Model '{model_name}' not found. Available models: {list(self.results.keys())}")
+            
+        model_info = self.results[model_name]
+        preprocessor_key = model_info.get('preprocessor', model_info.get('preprocessor_used'))
+        
+        if preprocessor_key == 'catboost_internal':
+            # CatBoost handles preprocessing internally
+            return X
+        
+        preprocessor = self.preprocessors_.get(preprocessor_key)
+        if preprocessor is not None:
+            return preprocessor.transform(X)
+        
+        # No preprocessing needed or preprocessor not available
+        return X.to_numpy() if isinstance(X, pd.DataFrame) else X
 
     def _plot_curves(self, X, y, curve_type="roc"):
         """Helper function to plot ROC or Precision-Recall curves."""
