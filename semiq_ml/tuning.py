@@ -60,128 +60,353 @@ class OptunaOptimizer:
         self.best_model: Optional[str] = None
         self.optimize_direction: str = "maximize" if self.base_model.maximize_metric else "minimize"
         
+        # Define hyperparameter configurations directly
+        self.param_config = self._get_default_param_configs()
+        
+    def _get_default_param_configs(self) -> Dict[str, Dict[str, Any]]:
+        """
+        Define the default hyperparameter configurations for various models.
+        
+        Returns:
+            Dictionary containing hyperparameter configurations for each model type.
+        """
+        return {
+            "xgboost": {
+                "booster": ["gbtree", "gblinear", "dart"],
+                "n_estimators": "int",
+                "learning_rate": "float",
+                "max_depth": "int",
+                "min_child_weight": "float",
+                "gamma": "float",
+                "subsample": "float",
+                "colsample_bytree": "float",
+                "colsample_bylevel": "float",
+                "colsample_bynode": "float",
+                "lambda": "float",
+                "alpha": "float",
+                "scale_pos_weight": "float",
+                "objective": "str",
+                "eval_metric": "str",
+                "tree_method": ["auto", "exact", "approx", "hist", "gpu_hist"],
+                "predictor": "str",
+                "verbosity": "int",
+                "seed": "int",
+                "random_state": "int",
+                "grow_policy": ["depthwise", "lossguide"],
+                "max_leaves": "int",
+                "max_bin": "int"
+            },
+            "lightgbm": {
+                "boosting_type": ["gbdt", "dart", "goss", "rf"],
+                "num_leaves": "int",
+                "max_depth": "int",
+                "learning_rate": "float",
+                "n_estimators": "int",
+                "subsample_for_bin": "int",
+                "objective": "str",
+                "class_weight": ["balanced", "None", "dict"],
+                "min_split_gain": "float",
+                "min_child_weight": "float",
+                "min_child_samples": "int",
+                "subsample": "float",
+                "subsample_freq": "int",
+                "colsample_bytree": "float",
+                "reg_alpha": "float",
+                "reg_lambda": "float",
+                "random_state": "int",
+                "n_jobs": "int",
+                "importance_type": ["split", "gain"],
+                "metric": "str",
+                "early_stopping_round": "int",
+                "cat_smooth": "float",
+                "max_bin": "int"
+            },
+            "catboost": {
+                "iterations": "int",
+                "learning_rate": "float",
+                "depth": "int",
+                "l2_leaf_reg": "float",
+                "model_size_reg": "float",
+                "rsm": "float",
+                "loss_function": "str",
+                "border_count": "int",
+                "feature_border_type": ["Median", "Uniform", "GreedyLogSum", "MinEntropy", "MaxLogSum"],
+                "thread_count": "int",
+                "random_seed": "int",
+                "logging_level": ["Silent", "Verbose", "Info", "Debug"],
+                "od_type": ["IncToDec", "Iter"],
+                "od_wait": "int",
+                "boosting_type": ["Ordered", "Plain"],
+                "bagging_temperature": "float",
+                "leaf_estimation_method": ["Newton", "Gradient"],
+                "early_stopping_rounds": "int"
+            },
+            "random_forest": {
+                "n_estimators": "int",
+                "criterion": ["gini", "entropy", "log_loss"],
+                "max_depth": "int",
+                "min_samples_split": "int or float",
+                "min_samples_leaf": "int or float",
+                "min_weight_fraction_leaf": "float",
+                "max_features": ["auto", "sqrt", "log2", None, "int", "float"],
+                "max_leaf_nodes": "int",
+                "min_impurity_decrease": "float",
+                "bootstrap": "bool",
+                "oob_score": "bool",
+                "n_jobs": "int",
+                "random_state": "int",
+                "verbose": "int",
+                "ccp_alpha": "float",
+                "max_samples": "int or float"
+            },
+            "decision_tree": {
+                "criterion": ["gini", "entropy", "log_loss"],
+                "splitter": ["best", "random"],
+                "max_depth": "int",
+                "min_samples_split": "int or float",
+                "min_samples_leaf": "int or float",
+                "min_weight_fraction_leaf": "float",
+                "max_features": ["auto", "sqrt", "log2", None, "int", "float"],
+                "random_state": "int",
+                "max_leaf_nodes": "int",
+                "min_impurity_decrease": "float",
+                "class_weight": ["balanced", "None", "dict"],
+                "ccp_alpha": "float"
+            },
+            "svc": {
+                "C": "float",
+                "kernel": ["linear", "poly", "rbf", "sigmoid"],
+                "degree": "int",
+                "gamma": ["scale", "auto", "float"],
+                "coef0": "float",
+                "shrinking": "bool",
+                "probability": "bool",
+                "tol": "float",
+                "cache_size": "float",
+                "class_weight": ["balanced", "None", "dict"],
+                "verbose": "bool",
+                "max_iter": "int",
+                "decision_function_shape": ["ovo", "ovr"],
+                "break_ties": "bool",
+                "random_state": "int"
+            },
+            "svr": {
+                "kernel": ["linear", "poly", "rbf", "sigmoid"],
+                "degree": "int",
+                "gamma": ["scale", "auto", "float"],
+                "coef0": "float",
+                "tol": "float",
+                "C": "float",
+                "epsilon": "float",
+                "shrinking": "bool",
+                "cache_size": "float",
+                "verbose": "bool",
+                "max_iter": "int"
+            },
+            "linear_regression": {
+                "fit_intercept": "bool",
+                "normalize": "bool", 
+                "copy_X": "bool",
+                "n_jobs": "int",
+                "positive": "bool"
+            },
+            "logistic_regression": {
+                "penalty": ["l1", "l2", "elasticnet", "none"],
+                "dual": "bool",
+                "tol": "float",
+                "C": "float",
+                "fit_intercept": "bool",
+                "intercept_scaling": "float",
+                "class_weight": ["balanced", "None", "dict"],
+                "random_state": "int",
+                "solver": ["newton-cg", "lbfgs", "liblinear", "sag", "saga"],
+                "max_iter": "int",
+                "multi_class": ["auto", "ovr", "multinomial"],
+                "verbose": "int",
+                "warm_start": "bool",
+                "n_jobs": "int",
+                "l1_ratio": "float"
+            }
+        }
+        
+    def _suggest_param(self, trial: optuna.Trial, name: str, param_config: Any) -> Any:
+        """
+        Suggest a parameter value based on its configuration.
+        """
+        # Skip parameter type suffixes that might be added during optimization
+        if name.endswith("_type"):
+            return None
+        
+        if isinstance(param_config, list):
+            return trial.suggest_categorical(name, param_config)
+        
+        elif param_config == "int":
+            # Default ranges for common integer parameters
+            if "n_estimators" in name or "iterations" in name:
+                return trial.suggest_int(name, 50, 1000)
+            elif "max_depth" in name:
+                return trial.suggest_int(name, 3, 32)
+            elif "num_leaves" in name or "max_leaves" in name:
+                return trial.suggest_int(name, 8, 256)
+            elif "min_samples" in name or "min_child_samples" in name:
+                return trial.suggest_int(name, 1, 50)
+            elif "max_bin" in name:
+                return trial.suggest_int(name, 32, 512)
+            elif "max_iter" in name:
+                return trial.suggest_int(name, 100, 2000)
+            elif "degree" in name:
+                return trial.suggest_int(name, 1, 5)
+            elif "n_jobs" in name or "thread_count" in name:
+                return -1  # Use all cores
+            elif "verbose" in name:
+                return 0  # No verbose output during optimization
+            elif "random_state" in name or "seed" in name or "random_seed" in name:
+                return self.random_state
+            else:
+                return trial.suggest_int(name, 1, 100)
+                
+        elif param_config == "float":
+            # Default ranges for common float parameters
+            if "learning_rate" in name:
+                return trial.suggest_float(name, 0.001, 0.3, log=True)
+            elif "subsample" in name or "colsample" in name:
+                return trial.suggest_float(name, 0.5, 1.0)
+            elif "reg_alpha" in name or "reg_lambda" in name or "alpha" in name or "lambda" in name or "l1" in name or "l2" in name:
+                return trial.suggest_float(name, 1e-8, 10.0, log=True)
+            elif "min_child_weight" in name:
+                return trial.suggest_float(name, 0.1, 10.0, log=True)
+            elif "C" in name:
+                return trial.suggest_float(name, 1e-4, 1e4, log=True)
+            elif "gamma" in name and param_config == "float":
+                return trial.suggest_float(name, 1e-8, 10.0, log=True)
+            elif "tol" in name:
+                return trial.suggest_float(name, 1e-6, 1e-2, log=True)
+            elif "epsilon" in name:
+                return trial.suggest_float(name, 0.01, 1.0)
+            else:
+                return trial.suggest_float(name, 0.0, 1.0)
+                
+        elif param_config == "bool":
+            return trial.suggest_categorical(name, [True, False])
+            
+        elif param_config.startswith("int or float"):
+            # For parameters that can be either int or float
+            if trial.suggest_categorical(f"{name}_type", ["int", "float"]) == "int":
+                return trial.suggest_int(name, 1, 50)
+            else:
+                return trial.suggest_float(name, 0.01, 0.5)
+                
+        elif param_config == "str":
+            # String parameters need specific handling based on their name
+            if "objective" in name:
+                if self.task_type == "classification":
+                    return "binary:logistic" if hasattr(self.base_model, 'n_classes_') and self.base_model.n_classes_ == 2 else "multi:softprob"
+                else:
+                    return "reg:squarederror"
+            elif "eval_metric" in name:
+                if self.task_type == "classification":
+                    return "auc" if hasattr(self.base_model, 'n_classes_') and self.base_model.n_classes_ == 2 else "mlogloss"
+                else:
+                    return "rmse"
+            elif "loss_function" in name:
+                if self.task_type == "classification":
+                    return "Logloss" if hasattr(self.base_model, 'n_classes_') and self.base_model.n_classes_ == 2 else "MultiClass"
+                else:
+                    return "RMSE"
+            else:
+                return None  # Skip this parameter
+        else:
+            return None  # Skip unknown parameter types
+    
     def _get_param_space(self, trial: optuna.Trial, model_name: str) -> Dict[str, Any]:
         """
         Define the hyperparameter search space for a specific model.
         """
         params: Dict[str, Any] = {}
         
-        if model_name == "Decision Tree":
+        # Map model names to configuration keys
+        model_config_map = {
+            "Random Forest": "random_forest",
+            "Decision Tree": "decision_tree",
+            "XGBoost": "xgboost",
+            "LGBM": "lightgbm",
+            "CatBoost": "catboost",
+            "SVC": "svc",
+            "SVR": "svr",
+            "Logistic Regression": "logistic_regression",
+            "Linear Regression": "linear_regression",
+            "KNN": None  # No specific config for KNN in the configuration
+        }
+        
+        # Get configuration key for the model
+        config_key = model_config_map.get(model_name)
+        
+        # Use configuration if available
+        if config_key and config_key in self.param_config:
+            config = self.param_config[config_key]
+            for param_name, param_config in config.items():
+                # Skip parameters that don't apply to the current task
+                if self.task_type == "classification" and param_name in ["epsilon"]:
+                    continue
+                if self.task_type == "regression" and param_name in ["class_weight", "probability"]:
+                    continue
+                
+                # Handle incompatible parameter combinations
+                if model_name == "Logistic Regression":
+                    if "penalty" in params and params["penalty"] == "none" and param_name == "C":
+                        continue
+                    if "penalty" in params and params["penalty"] not in ["l1", "elasticnet"] and param_name == "l1_ratio":
+                        continue
+                
+                param_value = self._suggest_param(trial, param_name, param_config)
+                if param_value is not None:
+                    params[param_name] = param_value
+        
+        # Handle special cases and model-specific logic
+        if model_name == "KNN":
             params = {
-                "max_depth": trial.suggest_int("max_depth", 2, 32),
-                "min_samples_split": trial.suggest_int("min_samples_split", 2, 20),
-                "min_samples_leaf": trial.suggest_int("min_samples_leaf", 1, 20),
-                "max_features": trial.suggest_categorical("max_features", ["sqrt", "log2", None]),
-                "random_state": self.random_state
+                "n_neighbors": trial.suggest_int("n_neighbors", 1, 40),
+                "weights": trial.suggest_categorical("weights", ["uniform", "distance"]),
+                "p": trial.suggest_int("p", 1, 2)  # p=1: Manhattan, p=2: Euclidean
             }
-            
-        elif model_name == "Random Forest":
-            params = {
-                "n_estimators": trial.suggest_int("n_estimators", 50, 500),
-                "max_depth": trial.suggest_int("max_depth", 3, 32),
-                "min_samples_split": trial.suggest_int("min_samples_split", 2, 20),
-                "min_samples_leaf": trial.suggest_int("min_samples_leaf", 1, 10),
-                "max_features": trial.suggest_categorical("max_features", ["sqrt", "log2"]),
-                "bootstrap": trial.suggest_categorical("bootstrap", [True, False]),
-                "random_state": self.random_state
-            }
-            
-        elif model_name == "LGBM":
-            params = {
-                "n_estimators": trial.suggest_int("n_estimators", 50, 1000),
-                "learning_rate": trial.suggest_float("learning_rate", 0.01, 0.3),
-                "max_depth": trial.suggest_int("max_depth", 3, 12),
-                "num_leaves": trial.suggest_int("num_leaves", 8, 256),
-                "min_child_samples": trial.suggest_int("min_child_samples", 5, 100),
-                "subsample": trial.suggest_float("subsample", 0.5, 1.0),
-                "colsample_bytree": trial.suggest_float("colsample_bytree", 0.5, 1.0),
-                "reg_alpha": trial.suggest_float("reg_alpha", 1e-8, 10.0, log=True),
-                "reg_lambda": trial.suggest_float("reg_lambda", 1e-8, 10.0, log=True),
-                "random_state": self.random_state,
-                "verbosity": -1
-            }
-            
-        elif model_name == "XGBoost":
-            params = {
-                "n_estimators": trial.suggest_int("n_estimators", 50, 1000),
-                "learning_rate": trial.suggest_float("learning_rate", 0.01, 0.3),
-                "max_depth": trial.suggest_int("max_depth", 3, 12),
-                "min_child_weight": trial.suggest_int("min_child_weight", 1, 10),
-                "subsample": trial.suggest_float("subsample", 0.5, 1.0),
-                "colsample_bytree": trial.suggest_float("colsample_bytree", 0.5, 1.0),
-                "gamma": trial.suggest_float("gamma", 1e-8, 1.0, log=True),
-                "reg_alpha": trial.suggest_float("reg_alpha", 1e-8, 10.0, log=True),
-                "reg_lambda": trial.suggest_float("reg_lambda", 1e-8, 10.0, log=True),
-                "random_state": self.random_state,
-                "verbosity": 0
-            }
-            
+        
+        # Additional logic for specific models
+        if model_name == "XGBoost":
             if self.task_type == "classification":
                 boosting_params = self.base_model._get_boosting_params()['xgb']
                 params["objective"] = boosting_params['objective']
                 params["eval_metric"] = boosting_params['eval_metric']
                 if hasattr(self.base_model, 'n_classes_') and self.base_model.n_classes_ > 2:
                     params["num_class"] = self.base_model.n_classes_
-            
+        
+        elif model_name == "LGBM":
+            if self.task_type == "classification":
+                boosting_params = self.base_model._get_boosting_params()['lgbm']
+                params["objective"] = "binary" if not hasattr(self.base_model, 'n_classes_') or self.base_model.n_classes_ == 2 else "multiclass"
+                params["metric"] = boosting_params['metric']
+                if hasattr(self.base_model, 'n_classes_') and self.base_model.n_classes_ > 2:
+                    params["num_class"] = self.base_model.n_classes_
+            params["verbosity"] = -1
+        
         elif model_name == "CatBoost":
-            params = {
-                "iterations": trial.suggest_int("iterations", 50, 1000),
-                "learning_rate": trial.suggest_float("learning_rate", 0.01, 0.3),
-                "depth": trial.suggest_int("depth", 4, 10),
-                "l2_leaf_reg": trial.suggest_float("l2_leaf_reg", 1e-8, 10.0, log=True),
-                "bagging_temperature": trial.suggest_float("bagging_temperature", 0.0, 1.0),
-                "random_strength": trial.suggest_float("random_strength", 1e-8, 1.0, log=True),
-                "random_seed": self.random_state,
-                "verbose": False
-            }
-            
             if self.task_type == "classification":
                 boosting_params = self.base_model._get_boosting_params()['catboost']
                 params["loss_function"] = boosting_params['loss_function']
-            
-        elif model_name == "Logistic Regression" and self.task_type == "classification":
-            params = {
-                "C": trial.suggest_float("C", 1e-4, 1e4, log=True),
-                "penalty": trial.suggest_categorical("penalty", ["l1", "l2"]),
-                "solver": trial.suggest_categorical("solver", ["liblinear", "saga"]),
-                "max_iter": 1000,
-                "random_state": self.random_state
-            }
-            
-        elif model_name == "SVC" and self.task_type == "classification":
-            params = {
-                "C": trial.suggest_float("C", 1e-4, 1e4, log=True),
-                "gamma": trial.suggest_float("gamma", 1e-6, 1e1, log=True),
-                "kernel": trial.suggest_categorical("kernel", ["rbf", "linear", "poly"]),
-                "probability": True,
-                "random_state": self.random_state
-            }
-            
-        elif model_name == "KNN":
-            params = {
-                "n_neighbors": trial.suggest_int("n_neighbors", 1, 40),
-                "weights": trial.suggest_categorical("weights", ["uniform", "distance"]),
-                "p": trial.suggest_int("p", 1, 2)  # p=1: Manhattan, p=2: Euclidean
-            }
-            
-        elif model_name == "Linear Regression" and self.task_type == "regression":
-            params = {
-                "fit_intercept": trial.suggest_categorical("fit_intercept", [True, False]),
-                "normalize": trial.suggest_categorical("normalize", [True, False])
-            }
-            
-        elif model_name == "SVR" and self.task_type == "regression":
-            params = {
-                "C": trial.suggest_float("C", 1e-4, 1e4, log=True),
-                "gamma": trial.suggest_float("gamma", 1e-6, 1e1, log=True),
-                "kernel": trial.suggest_categorical("kernel", ["rbf", "linear", "poly"]),
-                "epsilon": trial.suggest_float("epsilon", 0.01, 1.0)
-            }
-            
+            params["verbose"] = False
+        
+        # Ensure random_state is set for all models that support it
+        if "random_state" in params or model_name in ["Decision Tree", "Random Forest", "LGBM", "XGBoost", "CatBoost", "Logistic Regression", "SVC"]:
+            params["random_state"] = self.random_state
+        
         return params
     
-    def _objective(self, trial: optuna.Trial, X: pd.DataFrame, y: pd.Series, 
-                  model_name: str, validation_size: float = 0.2) -> float:
+    def _objective(
+            self, 
+            trial: optuna.Trial, 
+            X: pd.DataFrame, 
+            y: pd.Series, 
+            model_name: str, validation_size: float = 0.2
+        ) -> float:
         """
         Objective function for Optuna optimization.
         """
@@ -232,8 +457,42 @@ class OptunaOptimizer:
             # Inform Optuna that this trial failed and should be pruned
             raise optuna.exceptions.TrialPruned(f"Trial for {model_name} failed with error: {str(e)}")
     
-    def optimize(self, X: pd.DataFrame, y: pd.Series, model_name: Optional[str] = None, 
-                validation_size: float = 0.2, **kwargs) -> Dict[str, Dict[str, Any]]:
+    def _clean_params_for_model(self, model_name: str, params: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Clean parameters to ensure they're compatible with the target model.
+        
+        Removes parameters that aren't accepted by the model constructor.
+        """
+        model_class = self.base_model.models_to_run[model_name].__class__
+        valid_params = {}
+        
+        # Get valid parameters for the model
+        from inspect import signature
+        valid_param_names = list(signature(model_class.__init__).parameters.keys())
+        
+        # Remove 'self' from the list if present
+        if 'self' in valid_param_names:
+            valid_param_names.remove('self')
+        
+        # Filter the parameters
+        for param_name, param_value in params.items():
+            # Skip parameters with _type suffix which are used for optuna's parameter suggestions
+            if param_name.endswith('_type'):
+                continue
+                
+            # Add parameter if it's valid for this model
+            if param_name in valid_param_names:
+                valid_params[param_name] = param_value
+        
+        return valid_params
+
+    def optimize(
+            self, 
+            X: pd.DataFrame, 
+            y: pd.Series, 
+            model_name: Optional[str] = None, 
+            validation_size: float = 0.2, **kwargs
+        ) -> Dict[str, Dict[str, Any]]:
         """
         Optimize hyperparameters for a specific model or all models.
         """
@@ -295,6 +554,9 @@ class OptunaOptimizer:
                 elif model_name == "CatBoost":
                     best_params["loss_function"] = boosting_params['catboost']['loss_function']
                     best_params["verbose"] = False
+            
+            # Clean parameters to ensure compatibility with the model
+            best_params = self._clean_params_for_model(model_name, best_params)
             
             optimization_results[model_name] = {
                 "best_params": best_params,
@@ -391,8 +653,14 @@ class TunedBaselineModel(BaselineModel):
         self.best_params: Dict[str, Dict[str, Any]] = {}
         self.optimization_results: Optional[Dict[str, Any]] = None
     
-    def fit(self, X: pd.DataFrame, y: pd.Series, validation_size: float = 0.2, 
-            optimize_first: bool = True, **kwargs) -> Dict[str, Dict[str, Any]]:
+    def fit(
+            self, 
+            X: Union[pd.DataFrame, np.ndarray], 
+            y: Union[pd.Series, np.ndarray],
+            validation_size: float = 0.2, 
+            optimize_first: bool = True, 
+            **kwargs
+        ) -> Dict[str, Dict[str, Any]]:
         """
         Fit models with optional hyperparameter optimization.
         """
@@ -410,14 +678,21 @@ class TunedBaselineModel(BaselineModel):
             for model_name, params in self.best_params.items():
                 if model_name in self.models_to_run:
                     model_class = self.models_to_run[model_name].__class__
-                    self.models_to_run[model_name] = model_class(**params)
-        
+                    # Make sure we're using clean parameters
+                    clean_params = self.optimizer._clean_params_for_model(model_name, params)
+                    self.models_to_run[model_name] = model_class(**clean_params)
+    
         results = super().fit(X, y, validation_size, self.random_state, **kwargs)
         
         return results
     
-    def optimize_single_model(self, X: pd.DataFrame, y: pd.Series, model_name: str, 
-                              validation_size: float = 0.2, **kwargs) -> Dict[str, Any]:
+    def optimize_single_model(
+            self, 
+            X: pd.DataFrame, 
+            y: pd.Series, 
+            model_name: str, 
+            validation_size: float = 0.2, **kwargs
+        ) -> Dict[str, Any]:
         """
         Optimize hyperparameters for a specific model.
         """
@@ -431,6 +706,7 @@ class TunedBaselineModel(BaselineModel):
         self.best_params[model_name] = optimization_result[model_name]["best_params"]
         
         model_class = self.models_to_run[model_name].__class__
-        self.models_to_run[model_name] = model_class(**self.best_params[model_name])
+        clean_params = self.optimizer._clean_params_for_model(model_name, self.best_params[model_name])
+        self.models_to_run[model_name] = model_class(**clean_params)
         
         return optimization_result[model_name]

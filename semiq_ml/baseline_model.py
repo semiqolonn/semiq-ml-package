@@ -52,11 +52,13 @@ class BaselineModel:
     with model-specific preprocessing considerations.
     """
 
-    def __init__(self, 
-                 task_type: Literal["classification", "regression"] = "classification",
-                 metric: Optional[str] = None, 
-                 random_state: int = 42, 
-                 models: Literal["all", "trees", "gbm"] = "trees"):
+    def __init__(
+            self, 
+            task_type: Literal["classification", "regression"] = "classification",
+            metric: Optional[str] = None, 
+            random_state: int = 42, 
+            models: Literal["all", "trees", "gbm"] = "trees"
+        ) -> None:
         """
         Initializes the BaselineModel instance.
     
@@ -213,9 +215,11 @@ class BaselineModel:
         else:
             return 'general_ohe'
 
-    def _build_preprocessor(self, 
-                          X_ref_for_dtypes: Union[pd.DataFrame, np.ndarray], 
-                          preprocessor_type: Literal['general_ohe', 'distance_kernel', 'catboost_internal']) -> Optional[Union[Pipeline, ColumnTransformer]]:
+    def _build_preprocessor(
+            self, 
+            X_ref_for_dtypes: Union[pd.DataFrame, np.ndarray], 
+            preprocessor_type: Literal['general_ohe', 'distance_kernel', 'catboost_internal']
+        ) -> Optional[Union[Pipeline, ColumnTransformer]]:
         """Builds a preprocessor based on the required type and data types of X_ref."""
         if not isinstance(X_ref_for_dtypes, pd.DataFrame):
             logger.warning("X_ref_for_dtypes is not a DataFrame. Cannot infer column types for preprocessor. Assuming all numeric.")
@@ -324,7 +328,12 @@ class BaselineModel:
             gbm_models = ["LGBM", "XGBoost", "CatBoost"]
             return {name: model for name, model in all_models.items() if name in gbm_models}
 
-    def _evaluate_model_score(self, model: Any, X_val: Union[pd.DataFrame, np.ndarray], y_val: Union[pd.Series, np.ndarray]) -> float:
+    def _evaluate_model_score(
+            self, 
+            model: Any, 
+            X_val: Union[pd.DataFrame, np.ndarray], 
+            y_val: Union[pd.Series, np.ndarray]
+        ) -> float:
         """Calculates the score for a given model and primary metric."""
         metric_fn: Callable = self._metric_functions[self.metric]
         
@@ -374,10 +383,12 @@ class BaselineModel:
             y_pred = model.predict(X_val)
             return metric_fn(y_val, y_pred)
 
-    def _preprocess_for_model(self, 
-                         model_name: str, 
-                         X_train_raw: Union[pd.DataFrame, np.ndarray], 
-                         X_val_raw: Optional[Union[pd.DataFrame, np.ndarray]] = None) -> Tuple[np.ndarray, Optional[np.ndarray], str]:
+    def _preprocess_for_model(
+            self, 
+            model_name: str, 
+            X_train_raw: Union[pd.DataFrame, np.ndarray], 
+            X_val_raw: Optional[Union[pd.DataFrame, np.ndarray]] = None
+        ) -> Tuple[np.ndarray, Optional[np.ndarray], str]:
         """Preprocesses data for a specific model type"""
         preprocessor_key: str = self._get_model_type(model_name)
         
@@ -401,12 +412,14 @@ class BaselineModel:
         
         return X_train, X_val, preprocessor_key
 
-    def fit(self, 
-           X: Union[pd.DataFrame, np.ndarray], 
-           y: Union[pd.Series, np.ndarray], 
-           validation_size: float = 0.2, 
-           random_state: Optional[int] = None, 
-           **kwargs: Any) -> Dict[str, Dict[str, Any]]:
+    def fit(
+            self, 
+            X: Union[pd.DataFrame, np.ndarray], 
+            y: Union[pd.Series, np.ndarray], 
+            validation_size: float = 0.2, 
+            random_state: Optional[int] = None, 
+            **kwargs: Any
+        ) -> Dict[str, Dict[str, Any]]:
         """
         Fit the model(s) to the data.
         
@@ -586,9 +599,11 @@ class BaselineModel:
         logger.info(f"BaselineModel run complete. Best model: {self.best_model_.__class__.__name__} with {self.metric}: {self.best_score_:.4f}")
         return self.results  # Return the results dictionary
 
-    def _generate_evaluation_dataframe(self, 
-                              X: Union[pd.DataFrame, np.ndarray], 
-                              y: Union[pd.Series, np.ndarray]) -> pd.DataFrame:
+    def _generate_evaluation_dataframe(
+            self, 
+            X: Union[pd.DataFrame, np.ndarray], 
+            y: Union[pd.Series, np.ndarray]
+        ) -> pd.DataFrame:
         """
         Generate a DataFrame with evaluation metrics for all models.
     
@@ -682,9 +697,11 @@ class BaselineModel:
         
         return pd.DataFrame(eval_data)
 
-    def evaluate_all(self, 
-                 X: Union[pd.DataFrame, np.ndarray], 
-                 y: Union[pd.Series, np.ndarray]) -> Dict[str, float]:
+    def evaluate_all(
+            self, 
+            X: Union[pd.DataFrame, np.ndarray], 
+            y: Union[pd.Series, np.ndarray]
+        ) -> Dict[str, float]:
         """
         Evaluate all fitted models on new data.
         
@@ -787,9 +804,11 @@ class BaselineModel:
         # Create and return DataFrame
         return pd.DataFrame(data)
         
-    def _get_processed_data_for_eval(self, 
-                             X: Union[pd.DataFrame, np.ndarray], 
-                             model_name: str) -> Union[pd.DataFrame, np.ndarray]:
+    def _get_processed_data_for_eval(
+            self, 
+            X: Union[pd.DataFrame, np.ndarray], 
+            model_name: str
+        ) -> Union[pd.DataFrame, np.ndarray]:
         """
         Process input data using the appropriate preprocessor for a specific model.
         
@@ -822,10 +841,12 @@ class BaselineModel:
         # No preprocessing needed or preprocessor not available
         return X.to_numpy() if isinstance(X, pd.DataFrame) else X
 
-    def _plot_curves(self, 
-                 X: Union[pd.DataFrame, np.ndarray], 
-                 y: Union[pd.Series, np.ndarray], 
-                 curve_type: Literal["roc", "precision_recall"] = "roc") -> None:
+    def _plot_curves(
+            self, 
+            X: Union[pd.DataFrame, np.ndarray], 
+            y: Union[pd.Series, np.ndarray], 
+            curve_type: Literal["roc", "precision_recall"] = "roc"
+        ) -> None:
         """Helper function to plot ROC or Precision-Recall curves."""
         if self.task_type != "classification":
             raise ValueError(f"{curve_type.upper()} curves only for classification tasks.")
