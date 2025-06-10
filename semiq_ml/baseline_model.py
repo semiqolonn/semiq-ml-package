@@ -391,9 +391,27 @@ class BaselineModel:
         
         return X_train, X_val, preprocessor_key
 
-    def fit(self, X, y, validation_size=0.2, **fit_params):
+    def fit(self, X, y, validation_size=0.2, random_state=None, **kwargs):
         """
-        Trains all initialized models, applying appropriate preprocessing, and evaluates them.
+        Fit the model(s) to the data.
+        
+        Parameters
+        ----------
+        X : pandas.DataFrame or numpy.ndarray
+            Features
+        y : pandas.Series or numpy.ndarray
+            Target
+        validation_size : float, default=0.2
+            Size of validation set
+        random_state : int, optional
+            Random state for reproducibility
+        **kwargs : dict
+            Additional parameters to pass to the model
+            
+        Returns
+        -------
+        dict
+            Dictionary with results for each model
         """
         self.results = {}
         self.preprocessors_ = {}
@@ -446,7 +464,7 @@ class BaselineModel:
 
         for name, model_instance in self.models_to_run.items():
             start_time = time.time()
-            model_specific_fit_params = fit_params.copy()
+            model_specific_fit_params = kwargs.copy()
             
             if name == "CatBoost" and self.original_X_for_catboost is not None:
                 current_X_train, current_X_val = original_X_train_catboost, original_X_val_catboost
@@ -482,27 +500,51 @@ class BaselineModel:
 
             if current_X_train is None:
                 logger.error(f"Training data for {name} is None. Skipping.")
-                self.results[name] = {"model": None, "score": None, "time": 0, "error": "Training data is None", "preprocessor_used": preprocessor_key}
+                self.results[name] = {
+                    "model": None, 
+                    "score": None, 
+                    "time": 0, 
+                    "error": "Training data is None", 
+                    "preprocessor_used": preprocessor_key,
+                    "status": "Failed",
+                    "error_message": "Training data is None",
+                    "train_score": None,
+                    "val_score": None,
+                    "fit_time": 0,
+                    "preprocessor": preprocessor_key
+                }
                 continue
             
             try:
                 model_instance.fit(current_X_train, y_train, **model_specific_fit_params)
-                score = self._evaluate_model_score(model_instance, current_X_val, y_val)
+                
+                # Calculate training score
+                train_score = self._evaluate_model_score(model_instance, current_X_train, y_train)
+                
+                # Calculate validation score
+                val_score = self._evaluate_model_score(model_instance, current_X_val, y_val)
+                
                 elapsed_time = time.time() - start_time
 
-                logger.info(f"  {name} {self.metric}: {score:.4f} (Training Time: {elapsed_time:.2f}s)")
+                logger.info(f"  {name} {self.metric}: train={train_score:.4f}, val={val_score:.4f} (Time: {elapsed_time:.2f}s)")
                 self.results[name] = {
                     "model": model_instance, 
-                    "score": score, 
+                    "score": val_score,  # Keeping for backward compatibility
                     "time": elapsed_time,
-                    "preprocessor_used": preprocessor_key
+                    "preprocessor_used": preprocessor_key,
+                    "status": "Success",
+                    "error_message": "",
+                    "train_score": train_score,
+                    "val_score": val_score,
+                    "fit_time": elapsed_time,
+                    "preprocessor": preprocessor_key
                 }
 
-                if ((self.maximize_metric and score > self.best_score_) or 
-                   (not self.maximize_metric and score < self.best_score_)):
-                    self.best_score_ = score
+                if ((self.maximize_metric and val_score > self.best_score_) or 
+                   (not self.maximize_metric and val_score < self.best_score_)):
+                    self.best_score_ = val_score
                     self.best_model_ = model_instance
-                    logger.info(f"  --> NEW BEST model: {name} with {self.metric}: {score:.4f}")
+                    logger.info(f"  --> NEW BEST model: {name} with {self.metric}: {val_score:.4f}")
 
             except Exception as e:
                 logger.error(f"Error training {name}: {e}", exc_info=True)
@@ -511,123 +553,178 @@ class BaselineModel:
                     "score": None, 
                     "time": time.time() - start_time, 
                     "error": str(e),
-                    "preprocessor_used": preprocessor_key
+                    "preprocessor_used": preprocessor_key,
+                    "status": "Failed",
+                    "error_message": str(e),
+                    "train_score": None,
+                    "val_score": None,
+                    "fit_time": time.time() - start_time,
+                    "preprocessor": preprocessor_key
                 }
-        
+    
         del self._fitted_preprocessed_data_cache
 
         if not self.best_model_:
             logger.error("No models were successfully trained.")
-            return None
+            return self.results  # Return results even if empty
         
         logger.info(f"BaselineModel run complete. Best model: {self.best_model_.__class__.__name__} with {self.metric}: {self.best_score_:.4f}")
-        return self.best_model_
+        return self.results  # Return the results dictionary
 
-    def get_model(self, model_name):
-        """Returns a specific trained model by name"""
-        if model_name in self.results and "model" in self.results[model_name] and self.results[model_name]["model"] is not None:
-            return self.results[model_name]["model"]
-        else:
-            available_models = [k for k, v in self.results.items() if v.get('model') is not None]
-            raise ValueError(f"Model '{model_name}' not found or failed to train. Available models: {available_models}")
-
-    def _get_processed_data_for_eval(self, X_raw, model_name_in_results):
-        """Transforms raw X data using the preprocessor associated with a trained model."""
-        if not self.results or model_name_in_results not in self.results:
-            raise ValueError(f"Model {model_name_in_results} not found in results. Run fit() first.")
-
-        preprocessor_key = self.results[model_name_in_results].get('preprocessor_used')
-
-        if preprocessor_key == 'catboost_internal':
-            return X_raw
+    def _generate_evaluation_dataframe(self, X, y):
+        """
+        Generate a DataFrame with evaluation metrics for all models.
+    
+        Parameters
+        ----------
+        X : pandas.DataFrame or numpy.ndarray
+            Features
+        y : pandas.Series or numpy.ndarray
+            Target
         
-        fitted_preprocessor = self.preprocessors_.get(preprocessor_key)
-        if fitted_preprocessor:
-            return fitted_preprocessor.transform(X_raw)
-        elif preprocessor_key is not None and not fitted_preprocessor:
-            return X_raw.to_numpy() if isinstance(X_raw, pd.DataFrame) else X_raw
-        else:
-            raise ValueError(f"Preprocessor '{preprocessor_key}' for model '{model_name_in_results}' not found or not fitted.")
-
-    def evaluate_all(self, X, y):
-        """Evaluates all trained models on a given dataset (X, y)."""
-        evaluation_metrics_summary = {}
-        if not self.results:
-            logger.warning("No models have been trained yet. Run .fit() first.")
-            return pd.DataFrame()
-
+        Returns
+        -------
+        pandas.DataFrame
+            DataFrame with evaluation metrics for each model
+        """
+        if not hasattr(self, 'results') or not self.results:
+            raise ValueError("No fitted models available. Call fit() first.")
+        
+        # Dictionary to store evaluation results
+        eval_data = []
+    
+        # Handle label encoding for classification tasks
+        if self.task_type == "classification" and hasattr(self, 'label_encoder_') and self.label_encoder_ is not None:
+            if not np.issubdtype(np.array(y).dtype, np.number):
+                y = self.label_encoder_.transform(y)
+    
+        # Define metrics to calculate based on task type
+        metrics = {}
+        if self.task_type == 'classification':
+            metrics = {
+                'accuracy': lambda y_true, y_pred, **kwargs: accuracy_score(y_true, y_pred),
+                'f1_weighted': lambda y_true, y_pred, **kwargs: f1_score(y_true, y_pred, average='weighted', zero_division=0),
+                'precision_weighted': lambda y_true, y_pred, **kwargs: precision_score(y_true, y_pred, average='weighted', zero_division=0),
+                'recall_weighted': lambda y_true, y_pred, **kwargs: recall_score(y_true, y_pred, average='weighted', zero_division=0),
+            }
+        
+            # Add AUC and log_loss for models that support predict_proba
+            metrics.update({
+                'roc_auc': lambda y_true, y_pred_proba, **kwargs: roc_auc_score(
+                    y_true, y_pred_proba[:, 1] if y_pred_proba.shape[1] == 2 else y_pred_proba, 
+                    multi_class='ovr' if y_pred_proba.shape[1] > 2 else 'raise',
+                    average='weighted' if y_pred_proba.shape[1] > 2 else None
+                ),
+                'log_loss': lambda y_true, y_pred_proba, **kwargs: sk_log_loss(y_true, y_pred_proba)
+            })
+        else:  # regression metrics
+            metrics = {
+                'r2': lambda y_true, y_pred, **kwargs: r2_score(y_true, y_pred),
+                'rmse': lambda y_true, y_pred, **kwargs: np.sqrt(mean_squared_error(y_true, y_pred)),
+                'mae': lambda y_true, y_pred, **kwargs: mean_absolute_error(y_true, y_pred)
+            }
+    
+        # Calculate metrics for each model
         for name, model_info in self.results.items():
-            model = model_info.get("model")
+            model = model_info.get('model')
             if model is None:
-                logger.warning(f"Skipping evaluation for {name} as it failed to train.")
-                evaluation_metrics_summary[name] = {"error": model_info.get("error", "Failed to train")}
                 continue
-            
             try:
-                processed_eval_X = self._get_processed_data_for_eval(X, name)
+                # Get preprocessed X for this model
+                X_processed = self._get_processed_data_for_eval(X, name)
                 
-                current_metrics = {}
-                if self.task_type == "classification":
-                    preds = model.predict(processed_eval_X)
-                    current_metrics["accuracy"] = accuracy_score(y, preds)
-                    current_metrics["f1_weighted"] = f1_score(y, preds, average="weighted", zero_division=0)
-                    current_metrics["precision_weighted"] = precision_score(y, preds, average="weighted", zero_division=0)
-                    current_metrics["recall_weighted"] = recall_score(y, preds, average="weighted", zero_division=0)
-
-                    if hasattr(model, "predict_proba"):
-                        y_pred_proba = model.predict_proba(processed_eval_X)
-                        labels_for_metrics = getattr(model, 'classes_', np.unique(y))
-
-                        if y_pred_proba.shape[1] == 2: # Binary
-                            current_metrics["roc_auc"] = roc_auc_score(y, y_pred_proba[:, 1])
-                        else: # Multiclass
-                            current_metrics["roc_auc_ovr_weighted"] = roc_auc_score(
-                                y, y_pred_proba, multi_class="ovr", average="weighted", labels=labels_for_metrics
-                            )
-                        
-                        try:
-                            current_metrics["log_loss"] = sk_log_loss(y, y_pred_proba, labels=labels_for_metrics)
-                        except ValueError as e:
-                            logger.warning(f"Could not compute log_loss for {name}: {e}")
-                            current_metrics["log_loss"] = np.nan
-
-                else:  # Regression
-                    preds = model.predict(processed_eval_X)
-                    current_metrics["mse"] = mean_squared_error(y, preds)
-                    current_metrics["mae"] = mean_absolute_error(y, preds)
-                    current_metrics["r2"] = r2_score(y, preds)
-                    current_metrics["rmse"] = np.sqrt(current_metrics["mse"])
+                # Get predictions and probabilities (if applicable)
+                y_pred = model.predict(X_processed)
+                y_pred_proba = None
+                if self.task_type == 'classification' and hasattr(model, 'predict_proba'):
+                    try:
+                        y_pred_proba = model.predict_proba(X_processed)
+                    except:
+                        # Some models might not support predict_proba for some configs
+                        pass
+            
+                # Calculate metrics
+                model_metrics = {'model': name}
+                for metric_name, metric_fn in metrics.items():
+                    try:
+                        if metric_name in ['roc_auc', 'log_loss'] and y_pred_proba is not None:
+                            model_metrics[metric_name] = metric_fn(y, y_pred_proba)
+                        else:
+                            model_metrics[metric_name] = metric_fn(y, y_pred)
+                    except Exception as e:
+                        logger.warning(f"Could not calculate {metric_name} for {name}: {e}")
+                        model_metrics[metric_name] = None
                 
-                evaluation_metrics_summary[name] = current_metrics
+                eval_data.append(model_metrics)
             except Exception as e:
                 logger.error(f"Error evaluating {name}: {e}", exc_info=True)
-                evaluation_metrics_summary[name] = {"error": str(e)}
+    
+        if not eval_data:
+            logger.warning("No models could be evaluated.")
+            return pd.DataFrame()
         
-        results_df = pd.DataFrame.from_dict(evaluation_metrics_summary, orient="index")
-        results_df.index.name = "model"
-        logger.info("External evaluation complete.")
-        return results_df.reset_index()
+        return pd.DataFrame(eval_data)
+
+    def evaluate_all(self, X, y):
+        """
+        Evaluate all fitted models on new data.
+        
+        Parameters
+        ----------
+        X : pandas.DataFrame or numpy.ndarray
+            Features
+        y : pandas.Series or numpy.ndarray
+            Target
+            
+        Returns
+        -------
+        dict
+            Dictionary with evaluation results for each model
+        """
+        if not hasattr(self, 'results') or not self.results:
+            raise ValueError("No fitted models available. Call fit() first.")
+    
+        # Generate evaluation DataFrame
+        eval_df = self._generate_evaluation_dataframe(X, y)
+    
+        # Convert DataFrame to dictionary
+        eval_dict = {}
+        for _, row in eval_df.iterrows():
+            model_name = row['model']
+            eval_dict[model_name] = {
+                col: row[col] for col in eval_df.columns if col != 'model'
+            }
+    
+        return eval_dict
 
     def get_results(self):
-        """Returns a DataFrame summarizing the primary metric results from the fit process."""
-        if not self.results:
-            logger.info("No results available. Run .fit() first.")
-            return pd.DataFrame()
-
-        results_data = []
-        for name, info in self.results.items():
-            results_data.append({
-                "model": name,
-                "score": info.get("score"),
-                "time": info.get("time"),
-                "preprocessor_used": info.get("preprocessor_used"),
-                "status": "Success" if info.get("model") is not None and "error" not in info else "Failed",
-                "error_message": info.get("error", "")
-            })
-        results_df = pd.DataFrame(results_data)
-        if "score" in results_df.columns and not results_df.empty:
-            results_df = results_df.sort_values(by="score", ascending=not self.maximize_metric).reset_index(drop=True)
-        return results_df
+        """
+        Get results of model fitting as a DataFrame.
+        
+        Returns
+        -------
+        pandas.DataFrame
+            DataFrame with model results
+        """
+        if not hasattr(self, 'results') or not self.results:
+            raise ValueError("No results available. Call fit() first.")
+    
+        # Extract information from results dictionary
+        data = []
+        for model_name, model_info in self.results.items():
+            entry = {
+                'model': model_name,
+                'train_score': model_info.get('train_score', None),
+                'val_score': model_info.get('val_score', None),
+                'fit_time': model_info.get('fit_time', model_info.get('time', None)),
+                'preprocessor_used': model_info.get('preprocessor', model_info.get('preprocessor_used', 'unknown')),
+                'status': model_info.get('status', 'Success' if model_info.get('model') is not None else 'Failed'),
+                'error_message': model_info.get('error_message', model_info.get('error', ''))
+            }
+            data.append(entry)
+    
+        # Create and return DataFrame
+        return pd.DataFrame(data)
 
     def _plot_curves(self, X, y, curve_type="roc"):
         """Helper function to plot ROC or Precision-Recall curves."""

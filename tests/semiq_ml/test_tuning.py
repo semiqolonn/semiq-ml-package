@@ -285,10 +285,12 @@ def test_get_tuning_results(optuna_optimizer_classification, classification_data
 
 def test_plot_optimization_history(optuna_optimizer_classification, classification_data, monkeypatch):
     """Test plot_optimization_history method."""
-    # Mock optuna visualization module with mock figure
+    # Mock the imported function directly in the module
     mock_fig = MagicMock()
     mock_plot_optimization_history = MagicMock(return_value=mock_fig)
-    monkeypatch.setattr('optuna.visualization.plot_optimization_history', mock_plot_optimization_history)
+    
+    # Patch the function in the same scope it's imported in the tuning module
+    monkeypatch.setattr('semiq_ml.tuning.plot_optimization_history', mock_plot_optimization_history)
     
     # Mock study
     mock_study = MagicMock()
@@ -304,13 +306,29 @@ def test_plot_optimization_history(optuna_optimizer_classification, classificati
     # Verify plot was called
     assert mock_plot_optimization_history.called
     assert mock_fig.show.called
+    assert mock_fig.update_layout.called
+    mock_fig.update_layout.assert_called_with(title="Optimization History for model1")
+    
+    # Test with non-existent model
+    with patch('semiq_ml.tuning.logger') as mock_logger:
+        optuna_optimizer_classification.plot_optimization_history('non_existent_model')
+        mock_logger.warning.assert_called_once()
+    
+    # Test with ImportError
+    with patch('semiq_ml.tuning.plot_optimization_history', 
+               side_effect=ImportError("Plotly not installed")), \
+         patch('semiq_ml.tuning.logger') as mock_logger:
+        optuna_optimizer_classification.plot_optimization_history('model1')
+        mock_logger.warning.assert_called_once_with("Plotly not installed. Cannot generate visualization.")
 
 def test_plot_param_importances(optuna_optimizer_classification, monkeypatch):
     """Test plot_param_importances method."""
-    # Mock optuna visualization module with mock figure
+    # Mock the imported function directly in the module
     mock_fig = MagicMock()
     mock_plot_param_importances = MagicMock(return_value=mock_fig)
-    monkeypatch.setattr('optuna.visualization.plot_param_importances', mock_plot_param_importances)
+    
+    # Patch the function in the same scope it's imported in the tuning module
+    monkeypatch.setattr('semiq_ml.tuning.plot_param_importances', mock_plot_param_importances)
     
     # Mock study
     mock_study = MagicMock()
@@ -326,3 +344,5 @@ def test_plot_param_importances(optuna_optimizer_classification, monkeypatch):
     # Verify visualization function was called
     assert mock_plot_param_importances.called
     assert mock_fig.show.called
+    assert mock_fig.update_layout.called
+    mock_fig.update_layout.assert_called_with(title="Parameter Importances for model1")

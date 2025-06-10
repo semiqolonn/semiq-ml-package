@@ -8,6 +8,8 @@ from sklearn.model_selection import train_test_split, cross_val_score
 import matplotlib.pyplot as plt
 from .baseline_model import BaselineModel
 
+from optuna.visualization import plot_optimization_history, plot_param_importances
+
 # Setup Logging
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
 logger = logging.getLogger(__name__)
@@ -488,13 +490,13 @@ class OptunaOptimizer:
             
         study = self.study_objects[model_name]
         try:
-            from optuna.visualization import plot_optimization_history
+            # Use imported function instead of direct module access
             fig = plot_optimization_history(study)
             fig.update_layout(title=f"Optimization History for {model_name}")
             fig.show()
         except ImportError:
             logger.warning("Plotly not installed. Cannot generate visualization.")
-            
+        
     def plot_param_importances(self, model_name):
         """Plot parameter importances for a specific model."""
         if model_name not in self.study_objects:
@@ -503,7 +505,7 @@ class OptunaOptimizer:
             
         study = self.study_objects[model_name]
         try:
-            from optuna.visualization import plot_param_importances
+            # Use imported function instead of direct module access
             fig = plot_param_importances(study)
             fig.update_layout(title=f"Parameter Importances for {model_name}")
             fig.show()
