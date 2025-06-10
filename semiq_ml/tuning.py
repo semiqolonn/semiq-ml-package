@@ -488,11 +488,28 @@ class OptunaOptimizer:
 
         if config_key and config_key in self.param_config:
             config = self.param_config[config_key]
+            
+            # For CatBoost, handle verbosity-related parameters specially
+            catboost_verbosity_params = ['verbose', 'logging_level', 'verbose_eval', 'silent']
+            has_verbosity_param = False
+            
             for param_name, param_config in config.items():
                 if self.task_type == "classification" and param_name in ["epsilon"]:
                     continue
                 if self.task_type == "regression" and param_name in ["class_weight", "probability"]:
                     continue
+                
+                # Special handling for CatBoost verbosity parameters
+                if model_name == "CatBoost" and param_name in catboost_verbosity_params:
+                    if has_verbosity_param:
+                        continue  # Skip if we already have a verbosity parameter
+                    has_verbosity_param = True
+                    # Always use verbose=False for CatBoost and skip other verbosity params
+                    if param_name == "verbose":
+                        params["verbose"] = False
+                        continue
+                    else:
+                        continue  # Skip other verbosity parameters
                 
                 if model_name == "Logistic Regression":
                     if "penalty" in params and params["penalty"] == "none" and param_name == "C":
@@ -556,7 +573,12 @@ class OptunaOptimizer:
             if self.task_type == "classification":
                 boosting_params = self.base_model._get_boosting_params()['catboost']
                 params["loss_function"] = boosting_params['loss_function']
+            # Ensure exactly one verbosity parameter is set
             params["verbose"] = False
+            # Remove any other verbosity parameters to avoid conflicts
+            for param in ['logging_level', 'verbose_eval', 'silent']:
+                if param in params:
+                    del params[param]
             if "random_seed" not in params:
                 params["random_seed"] = self.random_state
             if "random_state" in params:
