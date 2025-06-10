@@ -174,7 +174,6 @@ class OptunaOptimizer:
                 "n_jobs": "int",
                 "importance_type": ["split", "gain"],
                 "metric": "str",
-                "early_stopping_round": "int",
                 "cat_smooth": "float",
                 "max_bin": "int"
             },
@@ -190,13 +189,10 @@ class OptunaOptimizer:
                 "feature_border_type": ["Median", "Uniform", "GreedyLogSum", "MinEntropy", "MaxLogSum"],
                 "thread_count": "int",
                 "random_seed": "int",
-                "logging_level": ["Silent", "Verbose", "Info", "Debug"],
-                "od_type": ["IncToDec", "Iter"],
-                "od_wait": "int",
+                "logging_level": ["Silent"],
                 "boosting_type": ["Ordered", "Plain"],
                 "bagging_temperature": "float",
-                "leaf_estimation_method": ["Newton", "Gradient"],
-                "early_stopping_rounds": "int"
+                "leaf_estimation_method": ["Newton", "Gradient"]
             },
             "random_forest": {
                 "n_estimators": "int",
@@ -521,12 +517,6 @@ class OptunaOptimizer:
                 if model_name == "CatBoost":
                     if param_name == "random_state":
                         continue
-                    # Skip early_stopping_rounds if od_wait is already in the params or about to be added
-                    if param_name == "early_stopping_rounds" and ("od_wait" in params or "od_wait" in config):
-                        continue
-                    # Skip od_wait if early_stopping_rounds is already in the params
-                    if param_name == "od_wait" and "early_stopping_rounds" in params:
-                        continue
                 
                 if model_name == "LGBM" and param_name == "class_weight":
                     param_value = trial.suggest_categorical(param_name, ["balanced", None])
@@ -635,29 +625,28 @@ class OptunaOptimizer:
                 random_state=self.random_state, stratify=stratify_opt
             )
             
+            # Get appropriate preprocessor type for this model and apply preprocessing
             preprocessor_key = self.base_model._get_model_type(model_name)
             X_train_proc, X_val_proc, _ = self.base_model._preprocess_for_model(
                 model_name, X_train, X_val_raw=X_val
             )
             
-
+            # Fit the model with silent logging for all model types
             if model_name == "XGBoost":
-                if X_val_proc is not None:
-                    model_instance.fit(X_train_proc, y_train, eval_set=[(X_val_proc, y_val)], verbose=0)
-                else:
-                    model_instance.fit(X_train_proc, y_train, verbose=0)
+                model_instance.fit(X_train_proc, y_train, verbose=0)
             elif model_name == "LGBM":
-                if X_val_proc is not None:
-                    model_instance.fit(X_train_proc, y_train, eval_set=[(X_val_proc, y_val)])
-                else:
-                    model_instance.fit(X_train_proc, y_train)
+                model_instance.fit(X_train_proc, y_train, verbose=-1)
+            elif model_name == "CatBoost":
+                model_instance.fit(X_train_proc, y_train, verbose=False)
             else:
                 model_instance.fit(X_train_proc, y_train)
             
             score: float = self.base_model._evaluate_model_score(model_instance, X_val_proc, y_val)
             
             elapsed_time: float = time.time() - start_time
-            logger.info(f"Trial {trial.number} for {model_name} - {self.metric}: {score:.4f} (Time: {elapsed_time:.2f}s)")
+            # Suppress detailed per-trial logging
+            if trial.number % 10 == 0:  # Only log every 10 trials
+                logger.info(f"Trial {trial.number} for {model_name} - {self.metric}: {score:.4f} (Time: {elapsed_time:.2f}s)")
             
             return score
             
@@ -692,10 +681,6 @@ class OptunaOptimizer:
             elif "random_state" in params:
                 params["random_seed"] = params["random_state"]
                 del params["random_state"]
-                
-            # Handle early stopping parameters
-            if "od_wait" in params and "early_stopping_rounds" in params:
-                del params["early_stopping_rounds"]
 
         for param_name, param_value in params.items():
             if param_name.endswith('_type'):
@@ -764,6 +749,7 @@ class OptunaOptimizer:
                     best_params = {}
                     best_score = float("-inf") if self.optimize_direction == "maximize" else float("inf")
             
+            # Set appropriate random state parameter for each model type
             if model_name in ["Decision Tree", "Random Forest", "LGBM", "XGBoost"]:
                 best_params["random_state"] = self.random_state
             elif model_name == "CatBoost":
@@ -771,9 +757,17 @@ class OptunaOptimizer:
                 # Remove random_state if it exists to avoid conflict
                 if "random_state" in best_params:
                     del best_params["random_state"]
-                # Ensure we don't have both early stopping parameters
-                if "od_wait" in best_params and "early_stopping_rounds" in best_params:
-                    del best_params["early_stopping_rounds"]
+                
+            # Ensure all models use silent logging
+            if model_name == "XGBoost":
+                best_params["verbose"] = 0
+                best_params["verbosity"] = 0
+            elif model_name == "LGBM":
+                best_params["verbose"] = -1
+                best_params["verbosity"] = -1
+            elif model_name == "CatBoost":
+                best_params["verbose"] = False
+                best_params["logging_level"] = "Silent"
                 
             if model_name in ["XGBoost", "LGBM", "CatBoost"] and self.task_type == "classification":
                 boosting_params = self.base_model._get_boosting_params()
@@ -783,16 +777,25 @@ class OptunaOptimizer:
                     best_params["eval_metric"] = boosting_params['xgb']['eval_metric']
                     if hasattr(self.base_model, 'n_classes_') and self.base_model.n_classes_ > 2:
                         best_params["num_class"] = self.base_model.n_classes_
+                    # Ensure silent operation
+                    best_params["verbosity"] = 0
+                    best_params["verbose"] = 0
+                    
                 elif model_name == "LGBM":
                     best_params["metric"] = boosting_params['lgbm']['metric']
+                    # Ensure silent operation
                     best_params["verbosity"] = -1
+                    best_params["verbose"] = -1
+                    
                 elif model_name == "CatBoost":
                     # Set the correct loss function based on classification type
                     if hasattr(self.base_model, 'n_classes_') and self.base_model.n_classes_ > 2:
                         best_params["loss_function"] = "MultiClass"
                     else:
                         best_params["loss_function"] = "Logloss"
+                    # Ensure silent operation
                     best_params["verbose"] = False
+                    best_params["logging_level"] = "Silent"
 
             best_params = self._clean_params_for_model(model_name, best_params)
             
@@ -895,6 +898,17 @@ class TunedBaselineModel(BaselineModel):
                     Example: {'XGBoost': 600, 'boosting': 300, 'trees': 120}
         """
         super().__init__(task_type, metric, random_state, models)
+        
+        # Make sure all models start with silent logging
+        for name, model in self.models_to_run.items():
+            if hasattr(model, 'set_params'):
+                if name == "XGBoost":
+                    model.set_params(verbose=0, verbosity=0)
+                elif name == "LGBM":
+                    model.set_params(verbose=-1, verbosity=-1)
+                elif name == "CatBoost":
+                    model.set_params(verbose=False, logging_level="Silent")
+        
         self.optimizer: OptunaOptimizer = OptunaOptimizer(
             task_type=task_type,
             metric=metric,
@@ -921,17 +935,57 @@ class TunedBaselineModel(BaselineModel):
         
         if optimize_first:
             logger.info("Starting hyperparameter optimization...")
+            
+            # Ensure preprocessors are initially built
+            if not hasattr(self, 'preprocessors_') or not self.preprocessors_:
+                # Create dummy validation split for preprocessing
+                stratify_opt = y if self.task_type == "classification" else None
+                X_train_raw, _, _, _ = train_test_split(
+                    X, y, test_size=validation_size, 
+                    random_state=self.random_state, stratify=stratify_opt
+                )
+                
+                # Initialize preprocessors for each model type
+                self.preprocessors_ = {}
+                for model_name in self.models_to_run:
+                    preprocessor_key = self._get_model_type(model_name)
+                    if preprocessor_key not in self.preprocessors_:
+                        preprocessor = self._build_preprocessor(X_train_raw, preprocessor_key)
+                        if preprocessor:
+                            self.preprocessors_[preprocessor_key] = preprocessor.fit(X_train_raw)
+            
+            # Set up logging level
+            original_log_level = logger.level
+            logger.setLevel(logging.WARNING)  # Suppress INFO logs during optimization
+            
+            # Run optimization with existing preprocessors
             self.optimization_results = self.optimizer.optimize(
                 X=X, y=y, validation_size=validation_size
             )
             
+            # Restore original logging level
+            logger.setLevel(original_log_level)
+            
             self.best_params = self.optimizer.best_params
             
+            # Update models with optimized parameters but ensure they're silent
             for model_name, params in self.best_params.items():
                 if model_name in self.models_to_run:
                     model_class = self.models_to_run[model_name].__class__
                     # Make sure we're using clean parameters
                     clean_params = self.optimizer._clean_params_for_model(model_name, params)
+                    
+                    # Ensure silent operation for all models
+                    if model_name == "XGBoost":
+                        clean_params["verbose"] = 0
+                        clean_params["verbosity"] = 0
+                    elif model_name == "LGBM":  
+                        clean_params["verbose"] = -1
+                        clean_params["verbosity"] = -1
+                    elif model_name == "CatBoost":
+                        clean_params["verbose"] = False
+                        clean_params["logging_level"] = "Silent"
+                        
                     self.models_to_run[model_name] = model_class(**clean_params)
                     
         results = super().fit(X, y, validation_size, self.random_state, **kwargs)
@@ -950,14 +1004,53 @@ class TunedBaselineModel(BaselineModel):
         """
         if model_name not in self.models_to_run:
             raise ValueError(f"Model {model_name} not found in available models.")
+        
+        # Ensure preprocessor for this model is initialized
+        preprocessor_key = self._get_model_type(model_name)
+        if not hasattr(self, 'preprocessors_') or preprocessor_key not in self.preprocessors_:
+            # Create dummy validation split for preprocessing
+            stratify_opt = y if self.task_type == "classification" else None
+            X_train_raw, _, _, _ = train_test_split(
+                X, y, test_size=validation_size, 
+                random_state=self.random_state, stratify=stratify_opt
+            )
             
+            # Initialize preprocessors if needed
+            if not hasattr(self, 'preprocessors_'):
+                self.preprocessors_ = {}
+                
+            # Create and fit preprocessor for this model
+            preprocessor = self._build_preprocessor(X_train_raw, preprocessor_key)
+            if preprocessor:
+                self.preprocessors_[preprocessor_key] = preprocessor.fit(X_train_raw)
+        
+        # Set up logging level
+        original_log_level = logger.level
+        logger.setLevel(logging.WARNING)  # Suppress INFO logs during optimization
+            
+        # Run optimization
         optimization_result: Dict[str, Any] = self.optimizer.optimize(
             X=X, y=y, model_name=model_name, validation_size=validation_size, **kwargs
         )
         
+        # Restore original logging level
+        logger.setLevel(original_log_level)
+        
         self.best_params[model_name] = optimization_result[model_name]["best_params"]
         model_class = self.models_to_run[model_name].__class__
         clean_params = self.optimizer._clean_params_for_model(model_name, self.best_params[model_name])
+        
+        # Ensure silent operation
+        if model_name == "XGBoost":
+            clean_params["verbose"] = 0
+            clean_params["verbosity"] = 0
+        elif model_name == "LGBM":
+            clean_params["verbose"] = -1
+            clean_params["verbosity"] = -1
+        elif model_name == "CatBoost":
+            clean_params["verbose"] = False
+            clean_params["logging_level"] = "Silent"
+        
         self.models_to_run[model_name] = model_class(**clean_params)
         
         return optimization_result[model_name]
