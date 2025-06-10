@@ -403,9 +403,11 @@ class OptunaOptimizer:
                 return trial.suggest_int(name, 1, 5)
             elif "n_jobs" in name or "thread_count" in name:
                 return -1
-            elif "verbose" in name:
-                return 0
-            elif "random_state" in name or "seed" in name or "random_seed" in name:
+            elif "verbose" in name or "verbosity" in name:
+                return 0 if "verbosity" in name else 0
+            elif "random_state" in name:
+                return self.random_state
+            elif "seed" in name and "random_seed" not in name:
                 return self.random_state
             else:
                 return trial.suggest_int(name, 1, 100)
@@ -525,6 +527,12 @@ class OptunaOptimizer:
                 params["eval_metric"] = boosting_params['eval_metric']
                 if hasattr(self.base_model, 'n_classes_') and self.base_model.n_classes_ > 2:
                     params["num_class"] = self.base_model.n_classes_
+            # Ensure verbosity is in acceptable range (0-3)
+            if "verbosity" in params:
+                params["verbosity"] = min(params.get("verbosity", 0), 3)
+            # Make sure we don't have both seed and random_state
+            if "seed" in params and "random_state" in params:
+                del params["seed"]
         
         elif model_name == "LGBM":
             if self.task_type == "classification":
@@ -540,6 +548,9 @@ class OptunaOptimizer:
                 boosting_params = self.base_model._get_boosting_params()['catboost']
                 params["loss_function"] = boosting_params['loss_function']
             params["verbose"] = False
+            # Make sure we only have one of random_seed or random_state
+            if "random_seed" in params and "random_state" in params:
+                del params["random_seed"]
 
 
         if "random_state" in params or model_name in ["Decision Tree", "Random Forest", "LGBM", "XGBoost", "CatBoost", "Logistic Regression", "SVC"]:
