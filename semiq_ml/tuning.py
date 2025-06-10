@@ -711,7 +711,8 @@ class OptunaOptimizer:
             X: pd.DataFrame, 
             y: pd.Series, 
             model_name: Optional[str] = None, 
-            validation_size: float = 0.2, **kwargs
+            validation_size: float = 0.2, 
+            **kwargs
         ) -> Dict[str, Dict[str, Any]]:
         """
         Optimize hyperparameters for a specific model or all models.
@@ -901,62 +902,60 @@ class TunedBaselineModel(BaselineModel):
             n_trials=n_trials, 
             timeout=timeout,
             models=models
-        )(
+        )
         self.best_params: Dict[str, Dict[str, Any]] = {}
-        self.optimization_results: Optional[Dict[str, Any]] = None X: Union[pd.DataFrame, np.ndarray], 
+        self.optimization_results: Optional[Dict[str, Any]] = None
     
-        """    validation_size: float = 0.2, 
-        Fit models with optional hyperparameter optimization.: bool = True, 
+    def fit(
+            self, 
+            X: Union[pd.DataFrame, np.ndarray], 
+            y: Union[pd.Series, np.ndarray], 
+            validation_size: float = 0.2, 
+            optimize_first: bool = True, 
+            **kwargs
+        ) -> Dict[str, Dict[str, Any]]:
         """
-        original_models = self.models_to_run.copy() Dict[str, Dict[str, Any]]:
+        Fit models with optional hyperparameter optimization.
+        """
+        original_models = self.models_to_run.copy()
         
-        if optimize_first:ion.
+        if optimize_first:
             logger.info("Starting hyperparameter optimization...")
-            inal_models = self.models_to_run.copy()
             self.optimization_results = self.optimizer.optimize(
-                X=X, y=y, validation_size=validation_sizeptimize_first:
-            ).")
+                X=X, y=y, validation_size=validation_size
+            )
             
             self.best_params = self.optimizer.best_params
             
             for model_name, params in self.best_params.items():
                 if model_name in self.models_to_run:
-                    model_class = self.models_to_run[model_name].__class__        self.best_params = self.optimizer.best_params
-                    # Make sure we're using clean parameters
-                    clean_params = self.optimizer._clean_params_for_model(model_name, params)    for model_name, params in self.best_params.items():
-                    self.models_to_run[model_name] = model_class(**clean_params)el_name in self.models_to_run:
                     model_class = self.models_to_run[model_name].__class__
-        results = super().fit(X, y, validation_size, self.random_state, **kwargs)e we're using clean parameters
-          clean_params = self.optimizer._clean_params_for_model(model_name, params)
-        return resultsls_to_run[model_name] = model_class(**clean_params)
+                    # Make sure we're using clean parameters
+                    clean_params = self.optimizer._clean_params_for_model(model_name, params)
+                    self.models_to_run[model_name] = model_class(**clean_params)
+                    
+        results = super().fit(X, y, validation_size, self.random_state, **kwargs)
+        return results
     
-    def optimize_single_model((X, y, validation_size, self.random_state, **kwargs)
+    def optimize_single_model(
             self, 
             X: pd.DataFrame, 
             y: pd.Series, 
             model_name: str, 
-            validation_size: float = 0.2, **kwargs self, 
+            validation_size: float = 0.2,
+            **kwargs
         ) -> Dict[str, Any]:
         """
-        Optimize hyperparameters for a specific model.    model_name: str, 
+        Optimize hyperparameters for a specific model.
         """
         if model_name not in self.models_to_run:
-            raise ValueError(f"Model {model_name} not found in available models.")""
-        Optimize hyperparameters for a specific model.
+            raise ValueError(f"Model {model_name} not found in available models.")
+            
         optimization_result: Dict[str, Any] = self.optimizer.optimize(
-            X=X, y=y, model_name=model_name, validation_size=validation_size, **kwargsif model_name not in self.models_to_run:
-        ) available models.")
-        
-        self.best_params[model_name] = optimization_result[model_name]["best_params"]e(
             X=X, y=y, model_name=model_name, validation_size=validation_size, **kwargs
-        model_class = self.models_to_run[model_name].__class__
-        clean_params = self.optimizer._clean_params_for_model(model_name, self.best_params[model_name])        
-
-
-
-
-        return optimization_result[model_name]                self.models_to_run[model_name] = model_class(**clean_params)        self.best_params[model_name] = optimization_result[model_name]["best_params"]
+        )
         
+        self.best_params[model_name] = optimization_result[model_name]["best_params"]
         model_class = self.models_to_run[model_name].__class__
         clean_params = self.optimizer._clean_params_for_model(model_name, self.best_params[model_name])
         self.models_to_run[model_name] = model_class(**clean_params)
