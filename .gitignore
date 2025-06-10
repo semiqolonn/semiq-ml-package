@@ -9,6 +9,7 @@ catboost_info/
 /build/
 */lib/*
 .vscode/
+semiq_ml.wiki/
 
 .coverage
 .coverage.*
