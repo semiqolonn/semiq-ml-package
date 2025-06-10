@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "semiq-ml"
-version = "0.2.5"
+version = "0.3.0"
 description = "A collection of reusable machine learning pipeline helpers"
 readme = "README.md"
 authors = [
@@ -28,6 +28,8 @@ dependencies = [
     "xgboost",
     "catboost",
     "optuna",
+    "Pillow",
+    "tqdm",
 ]
 
 [project.urls]
