@@ -1,4 +1,4 @@
-# tuning.py - Optuna-based hyperparameter optimization for BaselineModel
+# Optuna-based hyperparameter optimization for BaselineModel
 import optuna
 import numpy as np
 import pandas as pd
@@ -65,7 +65,7 @@ class OptunaOptimizer:
         elif model_name == "Linear Regression":
             return {
                 'fit_intercept': trial.suggest_categorical('fit_intercept', [True, False]),
-            }  # Linear Regression has few hyperparameters to tune
+            }
         elif model_name == "SVC" or model_name == "SVR":
             params = {
                 'C': trial.suggest_float('C', 1e-4, 1e2, log=True),
