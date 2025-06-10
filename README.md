@@ -1,87 +1,112 @@
-# semiq-ml
+# semiq-ml - Machine Learning Workflow Simplifier
 
-A collection of reusable machine learning pipeline helpers designed to streamline ML workflows.
+Welcome to the semiq-ml documentation. This package provides helper functions and classes to simplify common machine learning workflows, including baseline model training, evaluation, and hyperparameter tuning.
 
-## Description
+## Overview
 
-semiq-ml is a Python package that provides helper functions and classes to simplify common machine learning tasks, including baseline model training and hyperparameter tuning. It supports popular ML frameworks like LightGBM, XGBoost, and CatBoost.
+semiq-ml is designed to:
 
-## Installation
+- Quickly compare multiple machine learning models on your dataset
+- Automate hyperparameter tuning with Optuna
+- Provide consistent preprocessing and evaluation
+- Support both classification and regression tasks
+- Handle categorical features correctly, especially for tree-based models
+- Offer flexible model selection with 'all', 'trees', or 'gbm' options
 
-### From PyPI
-You can install the package from PyPI using pip:
+## Key Components
 
-```bash
-pip install semiq-ml
-```
+### BaselineModel
 
-### From Source
-Install the package directly from GitHub:
+The `BaselineModel` class automates the training and evaluation of multiple ML models, providing:
 
-```bash
-pip install git+https://github.com/yourusername/semiq-ml.git
-```
+- Automatic handling of preprocessing (scaling, encoding, imputation)
+- Performance comparison across standard algorithms
+- Support for common evaluation metrics
+- Special handling for boosting libraries (LightGBM, XGBoost, CatBoost)
+- Visualization of ROC curves and precision-recall curves
+- Flexible model selection with 'all', 'trees', or 'gbm' options
 
-Or install from source:
+### OptunaOptimizer
 
-```bash
-git clone https://github.com/yourusername/semiq-ml.git
-cd ml-helper
-pip install -e .
-```
+The `OptunaOptimizer` class enhances the BaselineModel by adding:
 
-## Features
+- Efficient hyperparameter tuning with Optuna
+- Smart parameter space sampling for all supported models
+- Detailed tuning results and best parameter reporting
+- Visualization of optimization history and parameter importance
+- Flexible control over trials and cross-validation
 
-- **Baseline Models**: Quickly train baseline models with sensible defaults
-- **Preprocessing**: Simple preprocessing steps for features (e.g., imputing, encoding, scaling)
-- **Integration**: Seamless integration with scikit-learn, LightGBM, XGBoost, and CatBoost
+## Getting Started
 
-## Usage
+Please refer to these guides to get started with semiq-ml:
 
-### Basic Example
+- [Installation Guide](https://github.com/semiqolonn/semiq-ml/wiki/Installation) - Setup instructions and requirements
+- [Basic Usage Examples](https://github.com/semiqolonn/semiq-ml/wiki/BasicUsage) - Simple examples to get you started
+- [API Reference](https://github.com/semiqolonn/semiq-ml/wiki/APIReference) - Complete documentation of all classes and methods
+
+## Example Usage
+
+The following example demonstrates a typical semiq-ml workflow:
 
 ```python
-from ml_helper import BaselineModel
+# Import required libraries
+from semiq_ml import BaselineModel
+from semiq_ml.tuning import OptunaOptimizer
 import pandas as pd
 from sklearn.model_selection import train_test_split
 
-# Load dataset
+# 1. Load your dataset
 data = pd.read_csv('your_data.csv')
-X = data.drop('target', axis=1)
-y = data['target']
+X = data.drop('target', axis=1)  # Features
+y = data['target']               # Target variable
 
-model = BaselineModel()
-model.fit(X, y)
+# 2. Split data into training and test sets
+X_train, X_test, y_train, y_test = train_test_split(
+    X, y, test_size=0.2, random_state=42
+)
 
-model.get_results() # to get the results of the baseline model
-lgbm = model.get_model('LGBM')
+# 3. Train and evaluate baseline models
+baseline = BaselineModel(
+    task_type="classification",  # Use "regression" for regression tasks
+    metric="f1_weighted",        # Choose an appropriate evaluation metric
+    models="trees"               # Only use tree-based models (options: 'all', 'trees', 'gbm')
+)
+baseline.fit(X_train, y_train)
+results = baseline.get_results()
+print(results)
+
+# 4. Tune the best performing model with OptunaOptimizer
+best_model_name = results.iloc[0]['model']
+tuner = OptunaOptimizer(
+    task_type="classification", 
+    metric="f1_weighted",
+    n_trials=20                  # Number of parameter combinations to try
+)
+tuned_model = tuner.tune_model(best_model_name, X_train, y_train)
+tuning_results = tuner.get_tuning_results()
+print(tuning_results)
 ```
 
-## Documentation
-For detailed documentation, please refer to the [Wiki](https://github.com/semiqolonn/semiq-ml/wiki)
+For more examples and advanced usage, see the [Basic Usage Examples](https://github.com/semiqolonn/semiq-ml/wiki/BasicUsage) guide.
 
-## Requirements
+## Support
 
-- Python >=3.12
-- numpy
-- pandas
-- scikit-learn
-- matplotlib
-- seaborn
-- lightgbm
-- xgboost
-- catboost
+If you encounter issues or have questions about semiq-ml:
+
+- **Bug Reports**: Please [open an issue](https://github.com/semiqolonn/semiq-ml/issues) with a detailed description of the problem, steps to reproduce it, and your environment details.
+- **Feature Requests**: Submit your ideas through the [issue tracker](https://github.com/semiqolonn/semiq-ml/issues) using the "Feature Request" template.
+- **Questions**: For usage questions, reach out via [GitHub Discussions](https://github.com/semiqolonn/semiq-ml/discussions)
 
 ## Contributing
 
-Contributions are welcome! Please feel free to submit a Pull Request.
+We welcome contributions to semiq-ml! Here's how you can help:
 
-1. Fork the repository
-2. Create your feature branch (`git checkout -b feature/amazing-feature`)
-3. Commit your changes (`git commit -m 'Add some amazing feature'`)
-4. Push to the branch (`git push origin feature/amazing-feature`)
-5. Open a Pull Request
+1. **Code Contributions**: Fork the repository, create a feature branch, and submit a pull request.
+2. **Documentation**: Help improve or translate documentation.
+3. **Bug Reports**: Report bugs or suggest features via the issue tracker.
+
+Please review our [Contributing Guidelines](https://github.com/semiqolonn/ml-helper/wiki/Contributing) for more details on code style, testing requirements, and the pull request process.
 
 ## License
 
-This project is licensed under the MIT License - see the LICENSE file for details.
+This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
