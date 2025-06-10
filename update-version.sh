@@ -42,9 +42,12 @@ git commit -m "Bump version to $NEW_VERSION"
 echo "Creating git tag v$NEW_VERSION..."
 git tag -a "v$NEW_VERSION" -m "Version $NEW_VERSION"
 
+# Get current branch name
+CURRENT_BRANCH=$(git rev-parse --abbrev-ref HEAD)
+
 # Push changes and tag to remote
 echo "Pushing changes and tag to GitHub..."
-git push origin main
+git push origin "$CURRENT_BRANCH"
 git push origin "v$NEW_VERSION"
 
 echo "Version $NEW_VERSION has been updated, committed, and pushed to GitHub."
