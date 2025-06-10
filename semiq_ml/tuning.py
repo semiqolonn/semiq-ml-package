@@ -28,8 +28,8 @@ class OptunaOptimizer:
         task_type: str = "classification",
         metric: Optional[str] = None,
         random_state: int = 42,
-        n_trials: int = 50,
-        timeout: Optional[int] = None,
+        n_trials: Union[int, Dict[str, int]] = 50,
+        timeout: Optional[Union[int, Dict[str, int]]] = None,
         models: str = "trees"
     ) -> None:
         """
@@ -39,8 +39,14 @@ class OptunaOptimizer:
             task_type: Type of ML task ('classification' or 'regression')
             metric: Evaluation metric to optimize (same as BaselineModel metrics)
             random_state: Seed for reproducibility
-            n_trials: Number of optimization trials
-            timeout: Maximum optimization time in seconds (None for no limit)
+            n_trials: Number of optimization trials. Can be:
+                      - An integer (same number of trials for all models)
+                      - A dictionary mapping model names to trial counts
+                      - A dictionary mapping model categories to trial counts (e.g. 'boosting': 50)
+            timeout: Maximum optimization time in seconds. Can be:
+                    - None for no limit
+                    - An integer (same timeout for all models)
+                    - A dictionary mapping model names or categories to timeouts
             models: Which model set to use ('all', 'trees', or 'gbm')
         """
         self.base_model: BaselineModel = BaselineModel(
@@ -52,17 +58,68 @@ class OptunaOptimizer:
         self.task_type: str = task_type
         self.metric: Optional[str] = metric
         self.random_state: int = random_state
-        self.n_trials: int = n_trials
-        self.timeout: Optional[int] = timeout
+        
+        self.model_categories = {
+            'boosting': ['XGBoost', 'LGBM', 'CatBoost'],
+            'gbm': ['XGBoost', 'LGBM', 'CatBoost'],
+            'trees': ['Random Forest', 'Decision Tree'],
+            'linear': ['Linear Regression', 'Logistic Regression'],
+            'svm': ['SVC', 'SVR'],
+            'other': ['KNN']
+        }
+        
+        self.n_trials: Dict[str, int] = self._process_config_param(n_trials, default=50)
+        
+        self.timeout: Dict[str, Optional[int]] = self._process_config_param(timeout, default=None)
+        
         self.models_to_tune: List[str] = list(self.base_model.models_to_run.keys())
         self.study: Optional[optuna.study.Study] = None
         self.best_params: Dict[str, Dict[str, Any]] = {}
         self.best_model: Optional[str] = None
         self.optimize_direction: str = "maximize" if self.base_model.maximize_metric else "minimize"
         
-        # Define hyperparameter configurations directly
         self.param_config = self._get_default_param_configs()
+    
+    def _process_config_param(self, param: Union[Any, Dict[str, Any]], default: Any) -> Dict[str, Any]:
+        """
+        Process a configuration parameter that can be either a single value or a dictionary.
         
+        Args:
+            param: The parameter (n_trials or timeout)
+            default: Default value to use if None
+            
+        Returns:
+            Dictionary mapping each model name to its parameter value
+        """
+        all_models = set()
+        for models in self.model_categories.values():
+            all_models.update(models)
+        
+        result = {model: default for model in all_models}
+        
+        if param is None:
+            return result
+            
+        if not isinstance(param, dict):
+            for model in result:
+                result[model] = param
+            return result
+        
+        if 'all' in param:
+            for model in result:
+                result[model] = param['all']
+    
+        for key, value in param.items():
+            if key in self.model_categories and key != 'all':
+                for model in self.model_categories[key]:
+                    result[model] = value
+    
+        for key, value in param.items():
+            if key in result:
+                result[key] = value
+    
+        return result
+
     def _get_default_param_configs(self) -> Dict[str, Dict[str, Any]]:
         """
         Define the default hyperparameter configurations for various models.
@@ -84,7 +141,7 @@ class OptunaOptimizer:
                 "colsample_bynode": "float",
                 "lambda": "float",
                 "alpha": "float",
-                "scale_pos_weight": "float",
+                "scale_pos_weight": "auto_scale",
                 "objective": "str",
                 "eval_metric": "str",
                 "tree_method": ["auto", "exact", "approx", "hist", "gpu_hist"],
@@ -104,7 +161,7 @@ class OptunaOptimizer:
                 "n_estimators": "int",
                 "subsample_for_bin": "int",
                 "objective": "str",
-                "class_weight": ["balanced", "None", "dict"],
+                "class_weight": "auto_weight",
                 "min_split_gain": "float",
                 "min_child_weight": "float",
                 "min_child_samples": "int",
@@ -157,7 +214,8 @@ class OptunaOptimizer:
                 "random_state": "int",
                 "verbose": "int",
                 "ccp_alpha": "float",
-                "max_samples": "int or float"
+                "max_samples": "int or float",
+                "class_weight": "auto_weight",
             },
             "decision_tree": {
                 "criterion": ["gini", "entropy", "log_loss"],
@@ -170,7 +228,7 @@ class OptunaOptimizer:
                 "random_state": "int",
                 "max_leaf_nodes": "int",
                 "min_impurity_decrease": "float",
-                "class_weight": ["balanced", "None", "dict"],
+                "class_weight": "auto_weight",
                 "ccp_alpha": "float"
             },
             "svc": {
@@ -183,7 +241,7 @@ class OptunaOptimizer:
                 "probability": "bool",
                 "tol": "float",
                 "cache_size": "float",
-                "class_weight": ["balanced", "None", "dict"],
+                "class_weight": "auto_weight",
                 "verbose": "bool",
                 "max_iter": "int",
                 "decision_function_shape": ["ovo", "ovr"],
@@ -217,7 +275,7 @@ class OptunaOptimizer:
                 "C": "float",
                 "fit_intercept": "bool",
                 "intercept_scaling": "float",
-                "class_weight": ["balanced", "None", "dict"],
+                "class_weight": "auto_weight",
                 "random_state": "int",
                 "solver": ["newton-cg", "lbfgs", "liblinear", "sag", "saga"],
                 "max_iter": "int",
@@ -229,19 +287,106 @@ class OptunaOptimizer:
             }
         }
         
-    def _suggest_param(self, trial: optuna.Trial, name: str, param_config: Any) -> Any:
+    def _compute_class_weights(self, y: pd.Series) -> Dict[str, Any]:
+        """
+        Compute different class weight strategies based on the target distribution.
+        
+        Args:
+            y: Target variable
+        
+        Returns:
+            Dictionary of different class weight strategies
+        """
+        if self.task_type != "classification":
+            return {}
+            
+        class_counts = pd.Series(y).value_counts()
+        n_samples = len(y)
+        n_classes = len(class_counts)
+        
+        weights = {}
+
+        balanced = {i: n_samples / (n_classes * count) for i, count in class_counts.items()}
+        weights["balanced"] = balanced
+        
+        balanced_subsample = {i: 1.0 / count for i, count in class_counts.items()}
+        weights["balanced_subsample"] = balanced_subsample
+        
+        sqrt_balanced = {i: np.sqrt(n_samples / (n_classes * count)) for i, count in class_counts.items()}
+        weights["sqrt_balanced"] = sqrt_balanced
+        
+        log_balanced = {i: np.log1p(n_samples / (n_classes * count)) for i, count in class_counts.items()}
+        weights["log_balanced"] = log_balanced
+        
+        if n_classes == 2:
+            minority_class = class_counts.idxmin()
+            majority_class = class_counts.idxmax()
+            
+            weights["ratio_1_1"] = {majority_class: 1.0, minority_class: 1.0}
+            weights["ratio_1_2"] = {majority_class: 1.0, minority_class: 2.0}
+            weights["ratio_1_3"] = {majority_class: 1.0, minority_class: 3.0}
+            weights["ratio_1_5"] = {majority_class: 1.0, minority_class: 5.0}
+            
+            majority_count = class_counts[majority_class]
+            minority_count = class_counts[minority_class]
+            
+            weights["scale_pos_weight"] = majority_count / minority_count
+            weights["scale_pos_weight_sqrt"] = np.sqrt(majority_count / minority_count)
+        
+        return weights
+    
+    def _suggest_param(self, trial: optuna.Trial, name: str, param_config: Any, y: Optional[pd.Series] = None) -> Any:
         """
         Suggest a parameter value based on its configuration.
         """
-        # Skip parameter type suffixes that might be added during optimization
         if name.endswith("_type"):
             return None
         
+        if param_config == "auto_weight" and y is not None and self.task_type == "classification":
+            weights = self._compute_class_weights(y)
+            
+            if name == "class_weight":
+                class_weight_options = []
+                
+                class_weight_options.append(None)
+                
+                if len(np.unique(y)) == 2:
+                    class_weight_options.extend([
+                        weights["balanced"], 
+                        weights["sqrt_balanced"], 
+                        weights["log_balanced"],
+                        weights["ratio_1_1"], 
+                        weights["ratio_1_2"], 
+                        weights["ratio_1_3"],
+                        weights["ratio_1_5"]
+                    ])
+                else:
+                    class_weight_options.extend([
+                        weights["balanced"], 
+                        weights["sqrt_balanced"], 
+                        weights["log_balanced"]
+                    ])
+                    
+                return trial.suggest_categorical(name, class_weight_options)
+                
+            elif name == "scale_pos_weight" and len(np.unique(y)) == 2:
+                scale_options = [
+                    1.0,
+                    weights["scale_pos_weight"],
+                    weights["scale_pos_weight_sqrt"],
+                    weights["scale_pos_weight"] * 0.75
+                ]
+                return trial.suggest_categorical(name, scale_options)
+        
         if isinstance(param_config, list):
+            if name == "class_weight" and "LGBM" in str(self.base_model.models_to_run):
+                options = [x for x in param_config if x != "dict"]
+                if "None" in options:
+                    options[options.index("None")] = None
+                return trial.suggest_categorical(name, options)
             return trial.suggest_categorical(name, param_config)
         
         elif param_config == "int":
-            # Default ranges for common integer parameters
             if "n_estimators" in name or "iterations" in name:
                 return trial.suggest_int(name, 50, 1000)
             elif "max_depth" in name:
@@ -257,16 +402,15 @@ class OptunaOptimizer:
             elif "degree" in name:
                 return trial.suggest_int(name, 1, 5)
             elif "n_jobs" in name or "thread_count" in name:
-                return -1  # Use all cores
+                return -1
             elif "verbose" in name:
-                return 0  # No verbose output during optimization
+                return 0
             elif "random_state" in name or "seed" in name or "random_seed" in name:
                 return self.random_state
             else:
                 return trial.suggest_int(name, 1, 100)
                 
         elif param_config == "float":
-            # Default ranges for common float parameters
             if "learning_rate" in name:
                 return trial.suggest_float(name, 0.001, 0.3, log=True)
             elif "subsample" in name or "colsample" in name:
@@ -290,14 +434,12 @@ class OptunaOptimizer:
             return trial.suggest_categorical(name, [True, False])
             
         elif param_config.startswith("int or float"):
-            # For parameters that can be either int or float
             if trial.suggest_categorical(f"{name}_type", ["int", "float"]) == "int":
                 return trial.suggest_int(name, 1, 50)
             else:
                 return trial.suggest_float(name, 0.01, 0.5)
                 
         elif param_config == "str":
-            # String parameters need specific handling based on their name
             if "objective" in name:
                 if self.task_type == "classification":
                     return "binary:logistic" if hasattr(self.base_model, 'n_classes_') and self.base_model.n_classes_ == 2 else "multi:softprob"
@@ -314,9 +456,9 @@ class OptunaOptimizer:
                 else:
                     return "RMSE"
             else:
-                return None  # Skip this parameter
+                return None
         else:
-            return None  # Skip unknown parameter types
+            return None
     
     def _get_param_space(self, trial: optuna.Trial, model_name: str) -> Dict[str, Any]:
         """
@@ -324,7 +466,7 @@ class OptunaOptimizer:
         """
         params: Dict[str, Any] = {}
         
-        # Map model names to configuration keys
+
         model_config_map = {
             "Random Forest": "random_forest",
             "Decision Tree": "decision_tree",
@@ -335,42 +477,47 @@ class OptunaOptimizer:
             "SVR": "svr",
             "Logistic Regression": "logistic_regression",
             "Linear Regression": "linear_regression",
-            "KNN": None  # No specific config for KNN in the configuration
+            "KNN": None
         }
         
-        # Get configuration key for the model
+
         config_key = model_config_map.get(model_name)
         
-        # Use configuration if available
+
         if config_key and config_key in self.param_config:
             config = self.param_config[config_key]
             for param_name, param_config in config.items():
-                # Skip parameters that don't apply to the current task
                 if self.task_type == "classification" and param_name in ["epsilon"]:
                     continue
                 if self.task_type == "regression" and param_name in ["class_weight", "probability"]:
                     continue
                 
-                # Handle incompatible parameter combinations
                 if model_name == "Logistic Regression":
                     if "penalty" in params and params["penalty"] == "none" and param_name == "C":
                         continue
                     if "penalty" in params and params["penalty"] not in ["l1", "elasticnet"] and param_name == "l1_ratio":
                         continue
                 
-                param_value = self._suggest_param(trial, param_name, param_config)
+                if model_name == "LGBM" and param_name == "class_weight":
+                    param_value = trial.suggest_categorical(param_name, ["balanced", None])
+                elif param_name in ["class_weight", "scale_pos_weight"] and param_config in ["auto_weight", "auto_scale"]:
+                    y = getattr(self, '_current_y', None)
+                    param_value = self._suggest_param(trial, param_name, param_config, y)
+                else:
+                    param_value = self._suggest_param(trial, param_name, param_config)
+                
                 if param_value is not None:
                     params[param_name] = param_value
         
-        # Handle special cases and model-specific logic
+
         if model_name == "KNN":
             params = {
                 "n_neighbors": trial.suggest_int("n_neighbors", 1, 40),
                 "weights": trial.suggest_categorical("weights", ["uniform", "distance"]),
-                "p": trial.suggest_int("p", 1, 2)  # p=1: Manhattan, p=2: Euclidean
+                "p": trial.suggest_int("p", 1, 2)
             }
         
-        # Additional logic for specific models
+
         if model_name == "XGBoost":
             if self.task_type == "classification":
                 boosting_params = self.base_model._get_boosting_params()['xgb']
@@ -393,8 +540,8 @@ class OptunaOptimizer:
                 boosting_params = self.base_model._get_boosting_params()['catboost']
                 params["loss_function"] = boosting_params['loss_function']
             params["verbose"] = False
-        
-        # Ensure random_state is set for all models that support it
+
+
         if "random_state" in params or model_name in ["Decision Tree", "Random Forest", "LGBM", "XGBoost", "CatBoost", "Logistic Regression", "SVC"]:
             params["random_state"] = self.random_state
         
@@ -413,6 +560,8 @@ class OptunaOptimizer:
         start_time: float = time.time()
         
         try:
+            self._current_y = y
+            
             params: Dict[str, Any] = self._get_param_space(trial, model_name)
             model_instance: Any = self.base_model.models_to_run[model_name].__class__(**params)
             
@@ -437,14 +586,13 @@ class OptunaOptimizer:
                 model_name, X_train, X_val_raw=X_val
             )
             
-            # Different handling for different model types
+
             if model_name == "XGBoost":
                 if X_val_proc is not None:
                     model_instance.fit(X_train_proc, y_train, eval_set=[(X_val_proc, y_val)], verbose=0)
                 else:
                     model_instance.fit(X_train_proc, y_train, verbose=0)
             elif model_name == "LGBM":
-                # LGBM doesn't accept verbose in fit() but has a verbosity param in the constructor
                 if X_val_proc is not None:
                     model_instance.fit(X_train_proc, y_train, eval_set=[(X_val_proc, y_val)])
                 else:
@@ -461,9 +609,11 @@ class OptunaOptimizer:
             
         except Exception as e:
             logger.error(f"Error in trial for {model_name}: {e}", exc_info=True)
-            # Inform Optuna that this trial failed and should be pruned
             raise optuna.exceptions.TrialPruned(f"Trial for {model_name} failed with error: {str(e)}")
-    
+        finally:
+            if hasattr(self, '_current_y'):
+                delattr(self, '_current_y')
+
     def _clean_params_for_model(self, model_name: str, params: Dict[str, Any]) -> Dict[str, Any]:
         """
         Clean parameters to ensure they're compatible with the target model.
@@ -473,21 +623,19 @@ class OptunaOptimizer:
         model_class = self.base_model.models_to_run[model_name].__class__
         valid_params = {}
         
-        # Get valid parameters for the model
+
         from inspect import signature
         valid_param_names = list(signature(model_class.__init__).parameters.keys())
         
-        # Remove 'self' from the list if present
+
         if 'self' in valid_param_names:
             valid_param_names.remove('self')
         
-        # Filter the parameters
+
         for param_name, param_value in params.items():
-            # Skip parameters with _type suffix which are used for optuna's parameter suggestions
             if param_name.endswith('_type'):
                 continue
-                
-            # Add parameter if it's valid for this model
+ 
             if param_name in valid_param_names:
                 valid_params[param_name] = param_value
         
@@ -512,12 +660,18 @@ class OptunaOptimizer:
 
         optimization_results: Dict[str, Dict[str, Any]] = {}
         
+        if self.task_type == "classification":
+            self.class_weights = self._compute_class_weights(y)
+        
         for model_name in models_to_optimize:
             if model_name not in self.base_model.models_to_run:
                 logger.warning(f"Model {model_name} not found in available models. Skipping.")
                 continue
                 
-            logger.info(f"Optimizing {model_name} hyperparameters...")
+            model_n_trials = self.n_trials.get(model_name, 50)
+            model_timeout = self.timeout.get(model_name, None)
+            
+            logger.info(f"Optimizing {model_name} hyperparameters with {model_n_trials} trials (timeout: {model_timeout if model_timeout else 'None'})...")
             
             study: optuna.study.Study = optuna.create_study(direction=self.optimize_direction, **kwargs)
             
@@ -527,8 +681,8 @@ class OptunaOptimizer:
             
             study.optimize(
                 objective_func, 
-                n_trials=self.n_trials,
-                timeout=self.timeout
+                n_trials=model_n_trials,
+                timeout=model_timeout
             )
             
             if len(study.trials) == 0 or all(t.state != optuna.trial.TrialState.COMPLETE for t in study.trials):
@@ -562,7 +716,6 @@ class OptunaOptimizer:
                     best_params["loss_function"] = boosting_params['catboost']['loss_function']
                     best_params["verbose"] = False
             
-            # Clean parameters to ensure compatibility with the model
             best_params = self._clean_params_for_model(model_name, best_params)
             
             optimization_results[model_name] = {
@@ -642,11 +795,26 @@ class TunedBaselineModel(BaselineModel):
         metric: Optional[str] = None,
         random_state: int = 42,
         models: str = "trees",
-        n_trials: int = 30,
-        timeout: Optional[int] = None
+        n_trials: Union[int, Dict[str, int]] = 30,
+        timeout: Optional[Union[int, Dict[str, int]]] = None
     ) -> None:
         """
         Initialize the TunedBaselineModel.
+        
+        Args:
+            task_type: Type of ML task ('classification' or 'regression')
+            metric: Evaluation metric to optimize
+            random_state: Seed for reproducibility
+            models: Which model set to use ('all', 'trees', or 'gbm')
+            n_trials: Number of optimization trials. Can be:
+                    - An integer (same for all models)
+                    - A dictionary mapping model names or categories to trial counts
+                    Example: {'XGBoost': 50, 'boosting': 30, 'trees': 20}
+            timeout: Maximum optimization time. Can be:
+                    - None for no limit
+                    - An integer (same for all models) 
+                    - A dictionary mapping model names or categories to timeouts
+                    Example: {'XGBoost': 600, 'boosting': 300, 'trees': 120}
         """
         super().__init__(task_type, metric, random_state, models)
         self.optimizer: OptunaOptimizer = OptunaOptimizer(
