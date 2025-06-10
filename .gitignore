@@ -8,6 +8,7 @@ catboost_info/
 /.pytest_cache/
 /build/
 */lib/*
+.vscode/
 
 .coverage
 .coverage.*
