@@ -36,7 +36,7 @@ sed -i "s/__version__ = \"[^\"]*\"/__version__ = \"$NEW_VERSION\"/" semiq_ml/__i
 # Commit the changes
 echo "Committing changes..."
 git add pyproject.toml setup.py semiq_ml/__init__.py
-git commit -m "Bump version to $NEW_VERSION"
+git commit -m "chore: Bump version to $NEW_VERSION"
 
 # Create and push tag
 echo "Creating git tag v$NEW_VERSION..."
