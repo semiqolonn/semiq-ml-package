@@ -499,10 +499,17 @@ class OptunaOptimizer:
                         continue
                     if "penalty" in params and params["penalty"] not in ["l1", "elasticnet"] and param_name == "l1_ratio":
                         continue
-                
-                # Skip random_state for CatBoost since we'll use random_seed instead
-                if model_name == "CatBoost" and param_name == "random_state":
-                    continue
+
+                # Skip parameters that could cause conflicts in CatBoost
+                if model_name == "CatBoost":
+                    if param_name == "random_state":
+                        continue
+                    # Skip early_stopping_rounds if od_wait is already in the params or about to be added
+                    if param_name == "early_stopping_rounds" and ("od_wait" in params or "od_wait" in config):
+                        continue
+                    # Skip od_wait if early_stopping_rounds is already in the params
+                    if param_name == "od_wait" and "early_stopping_rounds" in params:
+                        continue
                 
                 if model_name == "LGBM" and param_name == "class_weight":
                     param_value = trial.suggest_categorical(param_name, ["balanced", None])
@@ -531,10 +538,8 @@ class OptunaOptimizer:
                 params["eval_metric"] = boosting_params['eval_metric']
                 if hasattr(self.base_model, 'n_classes_') and self.base_model.n_classes_ > 2:
                     params["num_class"] = self.base_model.n_classes_
-            # Ensure verbosity is in acceptable range (0-3)
             if "verbosity" in params:
                 params["verbosity"] = min(params.get("verbosity", 0), 3)
-            # Make sure we don't have both seed and random_state
             if "seed" in params and "random_state" in params:
                 del params["seed"]
         
@@ -552,12 +557,13 @@ class OptunaOptimizer:
                 boosting_params = self.base_model._get_boosting_params()['catboost']
                 params["loss_function"] = boosting_params['loss_function']
             params["verbose"] = False
-            # For CatBoost, use random_seed instead of random_state
             if "random_seed" not in params:
                 params["random_seed"] = self.random_state
-            # Make sure we don't have both random_seed and random_state
             if "random_state" in params:
                 del params["random_state"]
+            # Ensure we don't have both early stopping parameters
+            if "od_wait" in params and "early_stopping_rounds" in params:
+                del params["early_stopping_rounds"]
 
 
         if "random_state" in params or model_name in ["Decision Tree", "Random Forest", "LGBM", "XGBoost", "Logistic Regression", "SVC"]:
@@ -641,23 +647,25 @@ class OptunaOptimizer:
         model_class = self.base_model.models_to_run[model_name].__class__
         valid_params = {}
         
-
         from inspect import signature
         valid_param_names = list(signature(model_class.__init__).parameters.keys())
         
-
         if 'self' in valid_param_names:
             valid_param_names.remove('self')
         
-        # Special handling for CatBoost - use only random_seed, not random_state
+        # Special handling for CatBoost parameters
         if model_name == "CatBoost":
+            # Handle random seed parameters
             if "random_seed" in params:
                 if "random_state" in params:
                     del params["random_state"]
             elif "random_state" in params:
-                # Rename random_state to random_seed for CatBoost
                 params["random_seed"] = params["random_state"]
                 del params["random_state"]
+                
+            # Handle early stopping parameters
+            if "od_wait" in params and "early_stopping_rounds" in params:
+                del params["early_stopping_rounds"]
 
         for param_name, param_value in params.items():
             if param_name.endswith('_type'):
@@ -732,6 +740,9 @@ class OptunaOptimizer:
                 # Remove random_state if it exists to avoid conflict
                 if "random_state" in best_params:
                     del best_params["random_state"]
+                # Ensure we don't have both early stopping parameters
+                if "od_wait" in best_params and "early_stopping_rounds" in best_params:
+                    del best_params["early_stopping_rounds"]
                 
             if model_name in ["XGBoost", "LGBM", "CatBoost"] and self.task_type == "classification":
                 boosting_params = self.base_model._get_boosting_params()
