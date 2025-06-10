@@ -437,11 +437,18 @@ class OptunaOptimizer:
                 model_name, X_train, X_val_raw=X_val
             )
             
-            if model_name in ["LGBM", "XGBoost"]:
+            # Different handling for different model types
+            if model_name == "XGBoost":
                 if X_val_proc is not None:
                     model_instance.fit(X_train_proc, y_train, eval_set=[(X_val_proc, y_val)], verbose=0)
                 else:
                     model_instance.fit(X_train_proc, y_train, verbose=0)
+            elif model_name == "LGBM":
+                # LGBM doesn't accept verbose in fit() but has a verbosity param in the constructor
+                if X_val_proc is not None:
+                    model_instance.fit(X_train_proc, y_train, eval_set=[(X_val_proc, y_val)])
+                else:
+                    model_instance.fit(X_train_proc, y_train)
             else:
                 model_instance.fit(X_train_proc, y_train)
             
