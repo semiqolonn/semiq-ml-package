@@ -273,13 +273,16 @@ class OptunaOptimizer:
                 model_name, X_train, X_val_raw=X_val
             )
             
-            # Fit the model with appropriate verbosity settings
+            # Fit the model with appropriate silencing parameters for each model type
             if model_name == "XGBoost":
-                model_instance.fit(X_train_proc, y_train, verbose=0)
+                # XGBoost: verbosity=0 provides complete silence
+                model_instance.fit(X_train_proc, y_train)
             elif model_name == "LGBM":
-                model_instance.fit(X_train_proc, y_train, verbose=-1)
+                # LightGBM: verbosity=-1 ensures the quietest operation (fatal errors only)
+                model_instance.fit(X_train_proc, y_train)
             elif model_name == "CatBoost":
-                model_instance.fit(X_train_proc, y_train, verbose=False)
+                # CatBoost: logging_level='Silent' is the recommended way to silence output
+                model_instance.fit(X_train_proc, y_train)
             else:
                 model_instance.fit(X_train_proc, y_train)
             
@@ -381,8 +384,8 @@ class OptunaOptimizer:
                     params["num_class"] = self.base_model.n_classes_
             
             # Ensure silent operation
-            params["verbose"] = 0
-            params["verbosity"] = 0
+            params["verbosity"] = 0  # Silent mode
+            params["use_label_encoder"] = False  # Avoid deprecation warnings
             
         elif model_name == "LGBM":
             if self.task_type == "classification":
@@ -393,8 +396,8 @@ class OptunaOptimizer:
                     params["num_class"] = self.base_model.n_classes_
             
             # Ensure silent operation
-            params["verbose"] = -1
-            params["verbosity"] = -1
+            params["verbose"] = -1  # Fatal errors only
+            params["verbosity"] = -1  # Redundant but for extra assurance
             
         elif model_name == "CatBoost":
             if self.task_type == "classification":
