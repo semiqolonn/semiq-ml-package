@@ -285,6 +285,177 @@ class TestOptunaOptimizer:
         assert "Decision Tree" in results
         assert "best_params" in results["Decision Tree"]
         assert "best_score" in results["Decision Tree"]
+    
+    def test_simplified_parameter_suggestion(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """Test that the simplified parameter suggestion method returns appropriate values"""
+        class MockTrial:
+            def __init__(self):
+                self.suggested_params = {}
+                
+            def suggest_int(self, name: str, low: int, high: int) -> int:
+                self.suggested_params[name] = (low, high, "int")
+                return low
+            
+            def suggest_float(self, name: str, low: float, high: float, **kwargs) -> float:
+                self.suggested_params[name] = (low, high, "float")
+                return low
+            
+            def suggest_categorical(self, name: str, choices) -> Any:
+                self.suggested_params[name] = choices
+                return choices[0]
+        
+        optimizer = OptunaOptimizer(task_type="classification")
+        mock_trial = MockTrial()
+        
+        # Test simplified parameter suggestion for max_depth
+        param_value = optimizer._suggest_simplified_param(mock_trial, "max_depth", "int")
+        assert param_value == mock_trial.suggested_params["max_depth"][0]  # Should be the low value (3)
+        assert mock_trial.suggested_params["max_depth"][1] == 15  # High should be 15 (reduced from 32)
+        
+        # Test simplified parameter suggestion for learning_rate
+        param_value = optimizer._suggest_simplified_param(mock_trial, "learning_rate", "float")
+        assert param_value == mock_trial.suggested_params["learning_rate"][0]  # Should be the low value
+        assert mock_trial.suggested_params["learning_rate"][0] == 0.01  # Low should be 0.01 (increased from 0.001)
+        assert mock_trial.suggested_params["learning_rate"][1] == 0.2   # High should be 0.2 (reduced from 0.3)
+        
+        # Test simplified parameter suggestion for n_estimators
+        param_value = optimizer._suggest_simplified_param(mock_trial, "n_estimators", "int")
+        assert mock_trial.suggested_params["n_estimators"][1] == 500  # High should be 500 (reduced from 1000)
+        
+        # Test simplified parameter suggestion for class_weight with classification task
+        y = pd.Series([0, 0, 0, 1, 1])  # Simple imbalanced series
+        param_value = optimizer._suggest_simplified_param(mock_trial, "class_weight", "auto_weight", y)
+        assert len(mock_trial.suggested_params["class_weight"]) == 2  # Should have only 2 options now
+        assert None in mock_trial.suggested_params["class_weight"]  # None should be an option
+        
+    def test_suggested_param_ranges_are_narrower(self) -> None:
+        """Test that the _suggest_simplified_param method uses narrower parameter ranges than _suggest_param"""
+        class MockTrial:
+            def __init__(self):
+                self.suggested_params = {}
+                
+            def suggest_int(self, name: str, low: int, high: int) -> int:
+                self.suggested_params[name] = (low, high, "int")
+                return low
+            
+            def suggest_float(self, name: str, low: float, high: float, **kwargs) -> float:
+                self.suggested_params[name] = (low, high, "float")
+                return low
+            
+            def suggest_categorical(self, name: str, choices) -> Any:
+                self.suggested_params[name] = choices
+                return choices[0]
+        
+        optimizer = OptunaOptimizer(task_type="classification")
+        
+        # Compare ranges for standard vs simplified parameter suggestion
+        params_to_test = [
+            "n_estimators", "max_depth", "learning_rate", 
+            "subsample", "reg_alpha", "min_child_weight"
+        ]
+        
+        for param in params_to_test:
+            trial1 = MockTrial()
+            trial2 = MockTrial()
+            
+            # Get parameter type based on name
+            if param in ["n_estimators", "max_depth"]:
+                param_type = "int"
+            else:
+                param_type = "float"
+            
+            # Get suggestions from both methods
+            standard_value = optimizer._suggest_param(trial1, param, param_type)
+            simplified_value = optimizer._suggest_simplified_param(trial2, param, param_type)
+            
+            # For int parameters, check if range is narrower in simplified version
+            if param_type == "int":
+                standard_range = trial1.suggested_params[param][1] - trial1.suggested_params[param][0]
+                simplified_range = trial2.suggested_params[param][1] - trial2.suggested_params[param][0]
+                assert simplified_range <= standard_range, f"Range for {param} should be narrower in simplified version"
+            
+            # For float parameters, either the low bound should be higher or the high bound should be lower
+            elif param_type == "float":
+                standard_low, standard_high = trial1.suggested_params[param][0], trial1.suggested_params[param][1]
+                simplified_low, simplified_high = trial2.suggested_params[param][0], trial2.suggested_params[param][1]
+                
+                assert (simplified_low >= standard_low or simplified_high <= standard_high), \
+                    f"Range for {param} should be more constrained in simplified version"
+                
+    def test_param_space_uses_simplified_params(self) -> None:
+        """Test that _get_param_space uses _suggest_simplified_param instead of _suggest_param"""
+        class MockTrial:
+            def suggest_int(self, name: str, low: int, high: int) -> int:
+                return low
+            
+            def suggest_float(self, name: str, low: float, high: float, **kwargs: Any) -> float:
+                return low
+            
+            def suggest_categorical(self, name: str, choices: List[Any]) -> Any:
+                return choices[0]
+        
+        optimizer = OptunaOptimizer(task_type="classification")
+        mock_trial = MockTrial()
+        
+        # Mock the _suggest_simplified_param method to track calls
+        original_simplified_param = optimizer._suggest_simplified_param
+        call_count = 0
+        
+        def mock_suggest_simplified_param(*args, **kwargs):
+            nonlocal call_count
+            call_count += 1
+            return original_simplified_param(*args, **kwargs)
+        
+        optimizer._suggest_simplified_param = mock_suggest_simplified_param
+        
+        # Get parameter space for a model
+        params = optimizer._get_param_space(mock_trial, "Decision Tree")
+        
+        # Check that _suggest_simplified_param was called at least once
+        assert call_count > 0, "_suggest_simplified_param should be called by _get_param_space"
+        
+        # Restore original method
+        optimizer._suggest_simplified_param = original_simplified_param
+    
+    def test_default_param_configs(self) -> None:
+        """Test that the default parameter configurations have been simplified"""
+        optimizer = OptunaOptimizer(task_type="classification")
+        param_configs = optimizer._get_default_param_configs()
+        
+        # Check that each model type has appropriate parameters
+        for model_type in ["xgboost", "lightgbm", "catboost", "random_forest", "decision_tree"]:
+            assert model_type in param_configs, f"Should have configuration for {model_type}"
+            
+            # Check that models have the most important parameters
+            if model_type in ["xgboost", "lightgbm", "catboost"]:
+                # Gradient boosting models should have these key parameters
+                assert "learning_rate" in param_configs[model_type]
+                if model_type == "xgboost":
+                    assert "max_depth" in param_configs[model_type]
+                    assert "subsample" in param_configs[model_type]
+                elif model_type == "lightgbm":
+                    assert "num_leaves" in param_configs[model_type]
+                    assert "max_depth" in param_configs[model_type]
+                elif model_type == "catboost":
+                    assert "depth" in param_configs[model_type]
+                    assert "l2_leaf_reg" in param_configs[model_type]
+            
+            elif model_type in ["random_forest", "decision_tree"]:
+                # Tree-based models should have these key parameters
+                assert "max_depth" in param_configs[model_type]
+                assert "min_samples_split" in param_configs[model_type]
+                if model_type == "random_forest":
+                    assert "n_estimators" in param_configs[model_type]
+        
+        # Check that parameters have correct types
+        for model_type, params in param_configs.items():
+            for param_name, param_type in params.items():
+                if param_name in ["learning_rate", "subsample", "reg_alpha", "reg_lambda", "min_child_weight"]:
+                    assert param_type == "float"
+                elif param_name in ["n_estimators", "max_depth", "num_leaves"]:
+                    assert param_type == "int"
+                elif param_name == "max_features":
+                    assert isinstance(param_type, list)
 
 
 class TestTunedBaselineModel:
