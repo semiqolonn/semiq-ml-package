@@ -81,19 +81,30 @@ def test_tune_model_respects_gpu_flag(gpu_enabled):
     
     # Mock the optimize function to avoid actual training
     import unittest.mock as mock
-    with mock.patch('optuna.Study.optimize'):
-        opt = OptunaOptimizer(task_type="classification", n_trials=1, models="all", gpu=gpu_enabled)
+    
+    # We need to modify the study.optimize method and add mock trials to the study
+    class MockStudy:
+        def __init__(self):
+            self.best_params = {}
+            self.best_trial = mock.MagicMock()
+            self.best_value = 0.95
         
-        # Use a simplified _get_param_space to avoid actual parameter suggestion
-        with mock.patch.object(opt, '_get_param_space') as mock_get_params:
-            # Just return an empty dict for parameters
-            mock_get_params.return_value = {}
-            
-            # Call tune_model
-            opt.tune_model("XGBoost", X, y, validation_size=0.2)
-            
-            # Check that _get_param_space was called
-            mock_get_params.assert_called()
-            
-            # Create a test to verify gpu was passed correctly
-            assert opt.gpu == gpu_enabled
+        def optimize(self, *args, **kwargs):
+            pass
+
+    opt = OptunaOptimizer(task_type="classification", n_trials=1, models="all", gpu=gpu_enabled)
+    opt.study = MockStudy()
+    
+    # Use a simplified _get_param_space to avoid actual parameter suggestion
+    with mock.patch.object(opt, '_get_param_space') as mock_get_params:
+        # Just return an empty dict for parameters
+        mock_get_params.return_value = {}
+        
+        # Call tune_model
+        opt.tune_model("XGBoost", X, y, validation_size=0.2)
+        
+        # Check that _get_param_space was called
+        mock_get_params.assert_called()
+        
+        # Create a test to verify gpu was passed correctly
+        assert opt.gpu == gpu_enabled
