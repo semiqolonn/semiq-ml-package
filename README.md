@@ -36,6 +36,29 @@ The `OptunaOptimizer` class enhances the BaselineModel by adding:
 - Detailed tuning results and best parameter reporting
 - Visualization of optimization history and parameter importance
 - Flexible control over trials and cross-validation
+- **GPU acceleration for XGBoost, LightGBM, and CatBoost** (set `gpu=True`)
+
+#### GPU
+
+If you have a compatible GPU and the required libraries installed, you can enable GPU acceleration for supported models (XGBoost, LightGBM, CatBoost) by passing `gpu=True` to the `OptunaOptimizer` constructor. This will automatically inject the correct GPU parameters for each library during hyperparameter search.
+
+**Example:**
+
+```python
+from semiq_ml.tuning import OptunaOptimizer
+
+tuner = OptunaOptimizer(
+    task_type="classification",
+    metric="f1_weighted",
+    n_trials=20,
+    gpu=True  # Enable GPU acceleration for supported models
+)
+```
+
+If `gpu=True`, the following parameters are set automatically:
+- **XGBoost**: `tree_method='gpu_hist'`, `predictor='gpu_predictor'`
+- **LightGBM**: `device='gpu'`, `gpu_platform_id=0`, `gpu_device_id=0`
+- **CatBoost**: `task_type='GPU'`, `devices='0'`
 
 ### Image Module
 
@@ -92,7 +115,8 @@ best_model_name = results.iloc[0]['model']
 tuner = OptunaOptimizer(
     task_type="classification", 
     metric="f1_weighted",
-    n_trials=20                  # Number of parameter combinations to try
+    n_trials=20,                 # Number of parameter combinations to try
+    gpu=True                     # Enable GPU acceleration for supported models
 )
 tuned_model = tuner.tune_model(best_model_name, X_train, y_train)
 tuning_results = tuner.get_tuning_results()
