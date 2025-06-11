@@ -5,7 +5,7 @@ This package provides helper functions and classes to simplify common machine le
 including baseline model training, hyperparameter tuning, and image processing.
 """
 
-__version__ = "0.3.6"
+__version__ = "0.4.0"
 
 # Import main classes for easy access
 from .baseline_model import BaselineModel
