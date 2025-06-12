@@ -5,12 +5,19 @@ import logging
 import time
 import platform
 import os
+import warnings
 from typing import Dict, List, Tuple, Optional, Union, Any, Literal, cast, NamedTuple
 from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import LabelEncoder
 
 from .baseline_model import BaselineModel
 from .trial_suggest import model_param_suggestions_classification, regression_param_suggestions_regression
+
+# Filter out LightGBM warnings when using GPU
+warnings.filterwarnings('ignore', message='.*compiler.*')
+warnings.filterwarnings('ignore', message='.*GPU.*')
+warnings.filterwarnings('ignore', message='.*cuda.*')
+warnings.filterwarnings('ignore', message='.*X does not have valid feature names.*')
 
 logging.basicConfig(
     level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s"
@@ -132,8 +139,11 @@ class OptunaOptimizer:
         for model_name in self.base_model.models_to_run:
             result[model_name] = default
             
-        # If param is not a dictionary, use the same value for all models
+        # If param is not a dictionary, use the provided value for all models
         if not isinstance(param, dict):
+            if param is not None:  # Only update if a non-None value was provided
+                for model_name in self.base_model.models_to_run:
+                    result[model_name] = param
             return result
             
         # Process dictionary param
@@ -279,7 +289,9 @@ class OptunaOptimizer:
                 model_instance.fit(X_train_proc, y_train)
             elif model_name == "LGBM":
                 # LightGBM: verbosity=-1 ensures the quietest operation (fatal errors only)
-                model_instance.fit(X_train_proc, y_train)
+                with warnings.catch_warnings():
+                    warnings.simplefilter("ignore")
+                    model_instance.fit(X_train_proc, y_train)
             elif model_name == "CatBoost":
                 # CatBoost: logging_level='Silent' is the recommended way to silence output
                 model_instance.fit(X_train_proc, y_train)
@@ -390,10 +402,22 @@ class OptunaOptimizer:
         elif model_name == "LGBM":
             if self.task_type == "classification":
                 boosting_params = self.base_model._get_boosting_params()["lgbm"]
-                params["objective"] = "binary" if not hasattr(self.base_model, "n_classes_") or self.base_model.n_classes_ == 2 else "multiclass"
-                params["metric"] = boosting_params["metric"]
-                if hasattr(self.base_model, "n_classes_") and self.base_model.n_classes_ > 2:
+                
+                # Make sure n_classes_ is set
+                if not hasattr(self.base_model, "n_classes_"):
+                    # If somehow we don't have n_classes_ set, default to binary
+                    logger.warning("n_classes_ not set for classification task with LGBM. Defaulting to binary classification.")
+                    params["objective"] = "binary"
+                elif self.base_model.n_classes_ == 2:
+                    params["objective"] = "binary"
+                else:
+                    params["objective"] = "multiclass"
                     params["num_class"] = self.base_model.n_classes_
+                
+                params["metric"] = boosting_params["metric"]
+            else:
+                # For regression
+                params["objective"] = "regression"
             
             # Ensure silent operation
             params["verbose"] = -1  # Fatal errors only
@@ -454,6 +478,12 @@ class OptunaOptimizer:
         if model_name not in self.base_model.models_to_run:
             raise ValueError(f"Model {model_name} not found in BaselineModel. "
                            f"Available models: {list(self.base_model.models_to_run.keys())}")
+        
+        # If classification, determine the number of classes and set it on the base_model
+        if self.task_type == "classification":
+            unique_classes = y.nunique()
+            self.base_model.n_classes_ = unique_classes
+            logger.info(f"Setting number of classes to {unique_classes}")
             
         n_trials = self.n_trials[model_name]
         timeout = self.timeout[model_name]
@@ -493,24 +523,49 @@ class OptunaOptimizer:
         except KeyboardInterrupt:
             logger.info("Optimization interrupted by user.")
         
-        # Get the best parameters and create a model with them
-        best_params = self.study.best_params
-        self.best_params[model_name] = best_params
-        
-        # Create a model with the best parameters
-        best_model_class = self.base_model.models_to_run[model_name].__class__
-        best_model = best_model_class(**best_params)
+        # Check if any trials completed successfully
+        completed_trials = [t for t in self.study.trials if t.state == optuna.trial.TrialState.COMPLETE]
+        if not completed_trials:
+            logger.warning("No trials completed successfully. Using default parameters.")
+            # Use default parameters when no trials complete successfully
+            best_params = {}
+            self.best_params[model_name] = best_params
+            
+            # Create a model with default parameters
+            best_model_class = self.base_model.models_to_run[model_name].__class__
+            best_model = best_model_class()
+        else:
+            # Get the best parameters and create a model with them
+            best_params = self.study.best_params
+            self.best_params[model_name] = best_params
+            
+            # Create a model with the best parameters
+            best_model_class = self.base_model.models_to_run[model_name].__class__
+            best_model = best_model_class(**best_params)
         
         # Add additional params for certain models
         if model_name == "XGBoost" and self.task_type == "classification":
             if hasattr(self.base_model, "n_classes_") and self.base_model.n_classes_ > 2:
                 best_model.set_params(num_class=self.base_model.n_classes_)
+                
+        # For LGBM classification, ensure the number of classes is set correctly
+        if model_name == "LGBM" and self.task_type == "classification" and hasattr(self.base_model, "n_classes_"):
+            if self.base_model.n_classes_ > 2:
+                best_model.set_params(objective="multiclass", num_class=self.base_model.n_classes_)
         
         # Store the best model
         self.best_model = best_model
         
-        logger.info(f"Optimization completed. Best score: {self.study.best_value}")
-        logger.info(f"Best parameters: {best_params}")
+        # Log appropriate completion message
+        completed_trials = [t for t in self.study.trials if t.state == optuna.trial.TrialState.COMPLETE]
+        if not completed_trials:
+            logger.warning(f"Optimization completed but no trials were successful. Using default parameters for {model_name}.")
+            logger.info(f"Failed trials: {len([t for t in self.study.trials if t.state == optuna.trial.TrialState.FAIL])}")
+            logger.info(f"Pruned trials: {len([t for t in self.study.trials if t.state == optuna.trial.TrialState.PRUNED])}")
+        else:
+            logger.info(f"Optimization completed. Best score: {self.study.best_value}")
+            logger.info(f"Best parameters: {best_params}")
+            logger.info(f"Successful trials: {len(completed_trials)} of {len(self.study.trials)}")
         
         return best_model
     
@@ -525,14 +580,31 @@ class OptunaOptimizer:
         """
         if self.study is None:
             raise ValueError("No tuning has been performed yet. Call tune_model first.")
-            
-        results = {
-            "best_params": self.study.best_params,
-            "best_value": self.study.best_value,
-            "best_trial": self.study.best_trial,
-            "trials": self.study.trials,
-            "study": self.study,
-        }
+        
+        # Check if any trials completed successfully
+        completed_trials = [t for t in self.study.trials if t.state == optuna.trial.TrialState.COMPLETE]
+        if not completed_trials:
+            results = {
+                "best_params": {},
+                "best_value": None,
+                "best_trial": None,
+                "trials": self.study.trials,
+                "study": self.study,
+                "completed_trials": 0,
+                "failed_trials": len([t for t in self.study.trials if t.state == optuna.trial.TrialState.FAIL]),
+                "pruned_trials": len([t for t in self.study.trials if t.state == optuna.trial.TrialState.PRUNED])
+            }
+        else:
+            results = {
+                "best_params": self.study.best_params,
+                "best_value": self.study.best_value,
+                "best_trial": self.study.best_trial,
+                "trials": self.study.trials,
+                "study": self.study,
+                "completed_trials": len(completed_trials),
+                "failed_trials": len([t for t in self.study.trials if t.state == optuna.trial.TrialState.FAIL]),
+                "pruned_trials": len([t for t in self.study.trials if t.state == optuna.trial.TrialState.PRUNED])
+            }
         
         return results
     
