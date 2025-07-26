@@ -2,7 +2,7 @@ from setuptools import setup, find_packages
 
 setup(
     name="semiq-ml",
-    version="0.4.5",
+    version="0.4.6",
     packages=find_packages(include=["semiq_ml", "semiq_ml.*"]),
     install_requires=[
         # ... your dependencies ...
